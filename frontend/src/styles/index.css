@@ -1,0 +1,119 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-on-surface font-sans overflow-x-hidden;
+    font-family: 'Inter', sans-serif;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-surface-container-lowest;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-outline-variant rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-outline;
+  }
+}
+
+@layer components {
+  .glass-card {
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .glass-header {
+    background: rgba(16, 19, 26, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  .glow-blue {
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.2);
+  }
+
+  .glow-primary {
+    box-shadow: 0 0 30px rgba(173, 198, 255, 0.15);
+  }
+
+  .text-gradient-primary {
+    background: linear-gradient(135deg, #adc6ff, #5de6ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}
+
+@layer utilities {
+  .pulse-dot {
+    animation: pulse-dot 2s infinite ease-in-out;
+  }
+
+  .pipeline-line-animated {
+    background-size: 200% 100%;
+    animation: pipeline-flow 2s infinite linear;
+  }
+}
+
+@keyframes pulse-dot {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.9);
+    opacity: 0.7;
+  }
+}
+
+@keyframes pipeline-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+@keyframes scan-line {
+  0% {
+    top: 0%;
+    opacity: 0.8;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+.scan-animation {
+  animation: scan-line 3s infinite linear;
+}
+
+/* Page transition wrapper */
+.page-wrapper {
+  min-height: 100vh;
+}
