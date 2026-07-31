@@ -1,33 +1,55 @@
 import { lazy, Suspense } from 'react'
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
+import { AuthProvider, useAuth } from './context/AuthContext'
+import { ToastProvider } from './context/ToastContext'
 import MainLayout from './layouts/MainLayout'
 import DashboardLayout from './layouts/DashboardLayout'
+import ProtectedRoute from './components/Shared/ProtectedRoute'
 
-// Lazy-loaded pages for performance
+// Lazy-loaded pages
 const Home = lazy(() => import('./pages/Home/Home'))
+const AuthPage = lazy(() => import('./pages/Auth/AuthPage'))
 const DashboardPage = lazy(() => import('./pages/Dashboard/DashboardPage'))
+const MonitorPage = lazy(() => import('./pages/Monitor/MonitorPage'))
+const ProfilePage = lazy(() => import('./pages/Profile/ProfilePage'))
+const SettingsPage = lazy(() => import('./pages/Settings/SettingsPage'))
 const NotFound = lazy(() => import('./pages/NotFound/NotFound'))
 
 function LoadingFallback() {
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center" aria-label="Loading">
+    <div className="min-h-screen bg-background flex items-center justify-center" aria-label="Loading page">
       <div className="flex flex-col items-center gap-4">
         <div className="w-10 h-10 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-        <p className="text-on-surface-variant text-label-caps text-sm tracking-widest uppercase">
-          Loading…
+        <p className="text-on-surface-variant text-xs tracking-widest uppercase font-semibold">
+          Loading DriverGuard AI…
         </p>
       </div>
     </div>
   )
 }
 
+// Redirect authenticated users away from /auth to /dashboard
+function AuthRouteGuard() {
+  const { isAuthenticated, isLoading } = useAuth()
+
+  if (isLoading) return <LoadingFallback />
+  if (isAuthenticated) return <Navigate to="/dashboard" replace />
+
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <AuthPage />
+    </Suspense>
+  )
+}
+
 function AnimatedRoutes() {
   const location = useLocation()
+
   return (
     <AnimatePresence mode="wait">
       <Routes location={location} key={location.pathname}>
-        {/* Marketing / Main Layout */}
+        {/* Public Landing Page */}
         <Route
           path="/"
           element={
@@ -39,19 +61,60 @@ function AnimatedRoutes() {
           }
         />
 
-        {/* Dashboard — full-screen dark layout */}
+        {/* Public Auth Page */}
+        <Route path="/auth" element={<AuthRouteGuard />} />
+
+        {/* Protected Dashboard Route */}
         <Route
           path="/dashboard"
           element={
-            <DashboardLayout>
-              <Suspense fallback={<LoadingFallback />}>
-                <DashboardPage />
-              </Suspense>
-            </DashboardLayout>
+            <ProtectedRoute>
+              <DashboardLayout>
+                <Suspense fallback={<LoadingFallback />}>
+                  <DashboardPage />
+                </Suspense>
+              </DashboardLayout>
+            </ProtectedRoute>
           }
         />
 
-        {/* 404 */}
+        {/* Protected Live Monitoring Route */}
+        <Route
+          path="/monitor"
+          element={
+            <ProtectedRoute>
+              <Suspense fallback={<LoadingFallback />}>
+                <MonitorPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Protected User Profile Route */}
+        <Route
+          path="/profile"
+          element={
+            <ProtectedRoute>
+              <Suspense fallback={<LoadingFallback />}>
+                <ProfilePage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Protected Settings Route */}
+        <Route
+          path="/settings"
+          element={
+            <ProtectedRoute>
+              <Suspense fallback={<LoadingFallback />}>
+                <SettingsPage />
+              </Suspense>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* 404 Not Found */}
         <Route
           path="*"
           element={
@@ -69,8 +132,12 @@ function AnimatedRoutes() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <AnimatedRoutes />
-    </BrowserRouter>
+    <ToastProvider>
+      <AuthProvider>
+        <BrowserRouter>
+          <AnimatedRoutes />
+        </BrowserRouter>
+      </AuthProvider>
+    </ToastProvider>
   )
 }
