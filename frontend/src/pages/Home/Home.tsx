@@ -1,10 +1,15 @@
 import { memo } from 'react'
 import { motion } from 'framer-motion'
 import Hero from '../../components/Hero/Hero'
+import TrustBanner from '../../components/TrustBanner/TrustBanner'
 import Features from '../../components/Features/Features'
-import DetectionGrid from '../../components/DetectionGrid/DetectionGrid'
 import Pipeline from '../../components/Pipeline/Pipeline'
+import DetectionGrid from '../../components/DetectionGrid/DetectionGrid'
 import KPICards from '../../components/KPICards/KPICards'
+import Industries from '../../components/Industries/Industries'
+import Testimonials from '../../components/Testimonials/Testimonials'
+import Pricing from '../../components/Pricing/Pricing'
+import FAQ from '../../components/FAQ/FAQ'
 import CTA from '../../components/CTA/CTA'
 
 const pageVariants = {
@@ -30,10 +35,15 @@ const Home = memo(function Home() {
       className="page-wrapper"
     >
       <Hero />
+      <TrustBanner />
       <Features />
-      <DetectionGrid />
       <Pipeline />
+      <DetectionGrid />
       <KPICards />
+      <Industries />
+      <Testimonials />
+      <Pricing />
+      <FAQ />
       <CTA />
     </motion.div>
   )

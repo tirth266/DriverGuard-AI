@@ -55,5 +55,5 @@ export interface FooterColumn {
   links: { label: string; href: string }[];
 }
 
-export type ButtonVariant = 'primary' | 'glass' | 'outline';
+export type ButtonVariant = 'primary' | 'glass' | 'outline' | 'secondary';
 export type BadgeVariant = 'safe' | 'danger' | 'warning' | 'info';

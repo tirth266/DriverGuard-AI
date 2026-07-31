@@ -1,11 +1,19 @@
 import { memo } from 'react'
 import { motion } from 'framer-motion'
-import { GitBranch } from 'lucide-react'
+import { CheckCircle, XCircle, ShieldCheck } from 'lucide-react'
 import Button from '../Shared/Button'
 import GlassCard from '../Shared/GlassCard'
 
 const HERO_IMAGE =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuCcKaLxmdIZwnR0lQmtyJqnulBLej0a0G8kFHVn1alPzu5Bih45tWBAph9k-Y_O-mDBiS96RZ6X6Pm6niij5B-CplXhXHUVFwTuaIm9ON1SnuBg7edeuTBmwyT-UrudvWqkJQYfwkRmLV4JkTFdmL0Za-_fIa5CC0_p2urfVKpFZ5yHicpcA_Xzpw1Baf5ENstaxctcRb9e5Ob1HFkQ9ZCUPonuqkQZT2f-2yawldUCYahojUrdLzzydNygLW_VYW37cVHmdtONPi4'
+
+const STATUS_ITEMS = [
+  { label: 'Driver Focused', status: true },
+  { label: 'Seat Belt', status: true },
+  { label: 'Phone Usage', status: false },
+  { label: 'Fatigue', status: false },
+  { label: 'Eyes on Road', status: true },
+]
 
 const fadeInLeft = {
   hidden: { opacity: 0, x: -40 },
@@ -29,10 +37,11 @@ const slideUp = {
 const Hero = memo(function Hero() {
   return (
     <section
-      className="min-h-[80vh] flex items-center px-4 md:px-16 max-w-[1440px] mx-auto py-[120px]"
+      className="min-h-[80vh] flex items-center px-4 md:px-16 max-w-[1440px] mx-auto py-[100px] md:py-[120px] bg-background text-on-surface"
       aria-label="Hero section"
+      id="solutions"
     >
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center w-full">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center w-full">
         {/* Left: Text content */}
         <motion.div
           variants={fadeInLeft}
@@ -46,11 +55,11 @@ const Hero = memo(function Hero() {
             variants={slideUp}
             initial="hidden"
             animate="visible"
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full glass-card border border-primary/20"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-card border border-border shadow-sm"
           >
-            <span className="w-2 h-2 rounded-full bg-secondary pulse-dot block" />
-            <span className="font-label-caps text-label-caps text-secondary tracking-[0.05em] uppercase">
-              AI Powered Driver Monitoring
+            <span className="w-2 h-2 rounded-full bg-emerald-500 pulse-dot block" />
+            <span className="font-label-caps text-label-caps text-primary tracking-[0.05em] uppercase font-semibold">
+              Trusted AI Fleet Safety Platform
             </span>
           </motion.div>
 
@@ -60,10 +69,10 @@ const Hero = memo(function Hero() {
             variants={slideUp}
             initial="hidden"
             animate="visible"
-            className="font-display text-[48px] leading-[1.1] tracking-[-0.02em] font-bold text-on-surface"
+            className="font-display text-[40px] md:text-[54px] leading-[1.1] tracking-[-0.02em] font-extrabold text-on-surface"
           >
-            Real-Time Driver <br />
-            <span className="text-primary">Distraction Detection</span>
+            Protect Every Journey <br />
+            <span className="text-gradient-primary">with Intelligent Driver Monitoring</span>
           </motion.h1>
 
           {/* Description */}
@@ -72,9 +81,11 @@ const Hero = memo(function Hero() {
             variants={slideUp}
             initial="hidden"
             animate="visible"
-            className="text-body-lg text-on-surface-variant max-w-lg leading-[1.6]"
+            className="text-body-lg text-on-surface-variant max-w-lg leading-[1.7]"
           >
-            Empower your fleet with advanced AI vision. DriverGuard AI monitors vigilance, detects drowsiness, and identifies distractions in milliseconds to prevent accidents before they happen.
+            DriverGuard AI helps fleets reduce accidents by detecting fatigue, phone usage,
+            distracted driving, smoking, and unsafe behaviors in real time — keeping drivers
+            safe on every trip.
           </motion.p>
 
           {/* CTAs */}
@@ -85,13 +96,16 @@ const Hero = memo(function Hero() {
             animate="visible"
             className="flex gap-4 flex-wrap"
           >
-            <Button variant="primary" size="lg" aria-label="Try the DriverGuard AI demo">
-              Try Demo
-            </Button>
-            <Button variant="glass" size="lg" className="flex items-center gap-2" aria-label="View source on GitHub">
-              <GitBranch size={16} />
-              View GitHub
-            </Button>
+            <a href="#contact">
+              <Button variant="primary" size="lg" aria-label="Book a live demo">
+                Book Live Demo
+              </Button>
+            </a>
+            <a href="#pricing">
+              <Button variant="secondary" size="lg" aria-label="Request pricing information">
+                Request Pricing
+              </Button>
+            </a>
           </motion.div>
         </motion.div>
 
@@ -100,53 +114,63 @@ const Hero = memo(function Hero() {
           variants={fadeInRight}
           initial="hidden"
           animate="visible"
-          className="relative mt-12 md:mt-0"
+          className="relative mt-8 md:mt-0"
         >
-          <GlassCard glow className="rounded-xl overflow-hidden">
+          <GlassCard className="rounded-2xl overflow-hidden border border-border shadow-md bg-card">
             <img
               src={HERO_IMAGE}
-              alt="AI driver monitoring system showing infrared camera feed with green bounding boxes and real-time data visualizations"
-              className="w-full aspect-video object-cover opacity-80"
+              alt="AI-powered driver monitoring system showing real-time safety analysis inside a vehicle cabin"
+              className="w-full aspect-video object-cover"
               loading="eager"
             />
           </GlassCard>
 
-          {/* Floating accuracy card — top right */}
+          {/* Floating LIVE STATUS card — top right */}
           <motion.div
             initial={{ opacity: 0, scale: 0.8, y: -10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             transition={{ delay: 0.6, duration: 0.5, type: 'spring' }}
-            className="absolute -top-6 -right-4 md:-right-6 glass-card p-4 rounded-lg flex flex-col gap-1"
-            aria-label="Accuracy metric"
+            className="absolute -top-4 -right-2 md:-right-4 bg-card p-4 rounded-xl shadow-lg border border-border"
+            aria-label="Live driver status"
           >
-            <span className="font-label-caps text-label-caps text-secondary tracking-[0.05em] uppercase">
-              ACCURACY
-            </span>
-            <span className="font-metric text-[28px] leading-none tracking-[-0.01em] font-bold text-on-surface">
-              96.8%
-            </span>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 pulse-dot block" />
+              <span className="font-label-caps text-[10px] text-emerald-600 dark:text-emerald-400 tracking-[0.08em] uppercase font-bold">
+                Live Status
+              </span>
+            </div>
+            <div className="space-y-1.5">
+              {STATUS_ITEMS.map((item) => (
+                <div key={item.label} className="flex items-center justify-between gap-4">
+                  <span className="text-[11px] text-on-surface-variant font-medium">{item.label}</span>
+                  {item.status ? (
+                    <CheckCircle size={14} className="text-emerald-500 flex-shrink-0" />
+                  ) : (
+                    <XCircle size={14} className="text-red-500 flex-shrink-0" />
+                  )}
+                </div>
+              ))}
+            </div>
           </motion.div>
 
-          {/* Floating stats card — bottom left */}
+          {/* Floating Safety Score card — bottom left */}
           <motion.div
             initial={{ opacity: 0, scale: 0.8, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             transition={{ delay: 0.75, duration: 0.5, type: 'spring' }}
-            className="absolute -bottom-10 left-4 md:left-10 glass-card p-4 rounded-lg flex items-center gap-4"
-            aria-label="Model architecture and training info"
+            className="absolute -bottom-8 left-4 md:left-8 bg-card p-5 rounded-xl flex items-center gap-4 shadow-lg border border-border"
+            aria-label="Safety score"
           >
-            <div className="flex flex-col">
-              <span className="font-label-caps text-label-caps text-on-surface-variant tracking-[0.05em] uppercase">
-                ARCHITECTURE
-              </span>
-              <span className="text-headline-md font-medium text-primary">YOLOv11</span>
+            <div className="h-12 w-12 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
+              <ShieldCheck className="text-primary" size={24} />
             </div>
-            <div className="h-10 w-px bg-white/10 mx-2" />
-            <div className="flex flex-col">
-              <span className="font-label-caps text-label-caps text-on-surface-variant tracking-[0.05em] uppercase">
-                TRAINING SET
+            <div>
+              <span className="font-label-caps text-[10px] text-on-surface-variant tracking-[0.05em] uppercase block font-semibold">
+                Safety Score
               </span>
-              <span className="text-headline-md font-medium text-on-surface">100K+ IMAGES</span>
+              <span className="font-metric text-[32px] leading-none tracking-[-0.01em] font-bold text-on-surface">
+                98<span className="text-primary text-[18px] font-medium">/100</span>
+              </span>
             </div>
           </motion.div>
         </motion.div>
