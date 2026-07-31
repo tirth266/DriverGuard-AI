@@ -1,7 +1,8 @@
 import { memo } from 'react'
 import { motion } from 'framer-motion'
 import { Camera, AlertTriangle, Volume2, Bell, CheckCircle } from 'lucide-react'
-import SectionTitle from '../Shared/SectionTitle'
+import SectionTitle from '../shared/SectionTitle'
+import GlassCard from '../shared/Card'
 
 const STEPS = [
   {

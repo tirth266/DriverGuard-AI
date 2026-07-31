@@ -5,16 +5,16 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import { ToastProvider } from './context/ToastContext'
 import MainLayout from './layouts/MainLayout'
 import DashboardLayout from './layouts/DashboardLayout'
-import ProtectedRoute from './components/Shared/ProtectedRoute'
+import ProtectedRoute from './components/shared/ProtectedRoute'
 
 // Lazy-loaded pages
-const Home = lazy(() => import('./pages/Home/Home'))
-const AuthPage = lazy(() => import('./pages/Auth/AuthPage'))
-const DashboardPage = lazy(() => import('./pages/Dashboard/DashboardPage'))
-const MonitorPage = lazy(() => import('./pages/Monitor/MonitorPage'))
-const ProfilePage = lazy(() => import('./pages/Profile/ProfilePage'))
-const SettingsPage = lazy(() => import('./pages/Settings/SettingsPage'))
-const NotFound = lazy(() => import('./pages/NotFound/NotFound'))
+const Home = lazy(() => import('./pages/Home'))
+const AuthPage = lazy(() => import('./pages/Auth'))
+const DashboardPage = lazy(() => import('./pages/Dashboard'))
+const MonitorPage = lazy(() => import('./pages/Monitor'))
+const ProfilePage = lazy(() => import('./pages/Profile'))
+const SettingsPage = lazy(() => import('./pages/Settings'))
+const NotFound = lazy(() => import('./pages/NotFound'))
 
 function LoadingFallback() {
   return (

@@ -8,7 +8,7 @@ import {
   Truck,
   Gauge,
 } from 'lucide-react'
-import SectionTitle from '../Shared/SectionTitle'
+import SectionTitle from '../shared/SectionTitle'
 
 const METRICS = [
   {

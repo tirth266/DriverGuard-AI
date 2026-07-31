@@ -2,7 +2,7 @@ import { memo } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Home, Shield } from 'lucide-react'
-import Button from '../../components/Shared/Button'
+import Button from '../components/shared/Button'
 
 const NotFound = memo(function NotFound() {
   return (

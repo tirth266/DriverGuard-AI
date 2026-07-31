@@ -27,7 +27,7 @@ import {
   CreditCard,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-import ThemeToggle from '../components/Shared/ThemeToggle'
+import ThemeToggle from '../components/layout/ThemeToggle'
 
 interface DashboardLayoutProps {
   children: ReactNode

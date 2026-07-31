@@ -1,16 +1,16 @@
 import { memo } from 'react'
 import { motion } from 'framer-motion'
-import Hero from '../../components/Hero/Hero'
-import TrustBanner from '../../components/TrustBanner/TrustBanner'
-import Features from '../../components/Features/Features'
-import Pipeline from '../../components/Pipeline/Pipeline'
-import DetectionGrid from '../../components/DetectionGrid/DetectionGrid'
-import KPICards from '../../components/KPICards/KPICards'
-import Industries from '../../components/Industries/Industries'
-import Testimonials from '../../components/Testimonials/Testimonials'
-import Pricing from '../../components/Pricing/Pricing'
-import FAQ from '../../components/FAQ/FAQ'
-import CTA from '../../components/CTA/CTA'
+import Hero from '../components/home/Hero'
+import TrustBanner from '../components/home/TrustBanner'
+import Features from '../components/home/Features'
+import Pipeline from '../components/home/Pipeline'
+import DetectionGrid from '../components/home/DetectionGrid'
+import KPISection from '../components/home/KPISection'
+import Industries from '../components/home/Industries'
+import Testimonials from '../components/home/Testimonials'
+import Pricing from '../components/home/Pricing'
+import FAQ from '../components/home/FAQ'
+import CTA from '../components/home/CTA'
 
 const pageVariants = {
   initial: { opacity: 0, y: 12 },
@@ -39,7 +39,7 @@ const Home = memo(function Home() {
       <Features />
       <Pipeline />
       <DetectionGrid />
-      <KPICards />
+      <KPISection />
       <Industries />
       <Testimonials />
       <Pricing />

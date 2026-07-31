@@ -1,9 +1,9 @@
 import { memo } from 'react'
 import { motion } from 'framer-motion'
-import { User, Building, Mail, Shield, CheckCircle2, KeyRound } from 'lucide-react'
-import { useAuth } from '../../context/AuthContext'
-import MainLayout from '../../layouts/MainLayout'
-import Button from '../../components/Shared/Button'
+import { User, Building, Mail, Shield, CheckCircle2 } from 'lucide-react'
+import { useAuth } from '../context/AuthContext'
+import MainLayout from '../layouts/MainLayout'
+import Button from '../components/shared/Button'
 
 const ProfilePage = memo(function ProfilePage() {
   const { user } = useAuth()

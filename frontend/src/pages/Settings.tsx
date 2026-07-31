@@ -1,9 +1,9 @@
 import { memo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Settings, Bell, Shield, Volume2, Save } from 'lucide-react'
-import { useToast } from '../../context/ToastContext'
-import MainLayout from '../../layouts/MainLayout'
-import Button from '../../components/Shared/Button'
+import { useToast } from '../context/ToastContext'
+import MainLayout from '../layouts/MainLayout'
+import Button from '../components/shared/Button'
 
 const SettingsPage = memo(function SettingsPage() {
   const [drowsinessSensitivity, setDrowsinessSensitivity] = useState('High')

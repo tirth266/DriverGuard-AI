@@ -8,8 +8,8 @@ import {
   ClipboardCheck,
   Activity,
 } from 'lucide-react'
-import SectionTitle from '../Shared/SectionTitle'
-import GlassCard from '../Shared/GlassCard'
+import SectionTitle from '../shared/SectionTitle'
+import GlassCard from '../shared/Card'
 
 const BENEFITS = [
   {

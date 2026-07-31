@@ -1,8 +1,8 @@
 import { memo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Minus } from 'lucide-react'
-import SectionTitle from '../Shared/SectionTitle'
-import GlassCard from '../Shared/GlassCard'
+import SectionTitle from '../shared/SectionTitle'
+import GlassCard from '../shared/Card'
 
 const FAQ_ITEMS = [
   {

@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import { motion } from 'framer-motion'
-import Button from '../Shared/Button'
-import GlassCard from '../Shared/GlassCard'
+import Button from '../shared/Button'
+import GlassCard from '../shared/Card'
 
 const CTA = memo(function CTA() {
   return (

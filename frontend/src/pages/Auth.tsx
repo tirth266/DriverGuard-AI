@@ -8,17 +8,16 @@ import {
   User,
   Building,
   ArrowRight,
-  CheckCircle,
+  ShieldCheck,
   Eye,
   EyeOff,
-  ShieldCheck,
   X,
   Send,
   Sparkles,
 } from 'lucide-react'
-import { useAuth } from '../../context/AuthContext'
-import Button from '../../components/Shared/Button'
-import ThemeToggle from '../../components/Shared/ThemeToggle'
+import { useAuth } from '../context/AuthContext'
+import Button from '../components/shared/Button'
+import ThemeToggle from '../components/layout/ThemeToggle'
 
 const DASHBOARD_PREVIEW_IMG =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuCcKaLxmdIZwnR0lQmtyJqnulBLej0a0G8kFHVn1alPzu5Bih45tWBAph9k-Y_O-mDBiS96RZ6X6Pm6niij5B-CplXhXHUVFwTuaIm9ON1SnuBg7edeuTBmwyT-UrudvWqkJQYfwkRmLV4JkTFdmL0Za-_fIa5CC0_p2urfVKpFZ5yHicpcA_Xzpw1Baf5ENstaxctcRb9e5Ob1HFkQ9ZCUPonuqkQZT2f-2yawldUCYahojUrdLzzydNygLW_VYW37cVHmdtONPi4'
@@ -184,14 +183,13 @@ export default function AuthPage() {
       {/* Main Container */}
       <main className="flex-1 flex items-center justify-center px-4 md:px-10 lg:px-16 py-6 z-10 max-w-[1440px] mx-auto w-full">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center w-full">
-          {/* LEFT SIDE — Large Branding & Preview Illustration (7 cols on Desktop) */}
+          {/* LEFT SIDE — Large Branding & Preview Illustration */}
           <motion.div
             initial={{ opacity: 0, x: -30 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.6, ease: 'easeOut' }}
             className="lg:col-span-6 xl:col-span-7 space-y-8 pr-0 lg:pr-6"
           >
-            {/* Live Badge */}
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-card border border-border shadow-sm">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 pulse-dot block" />
               <span className="text-xs font-semibold text-primary uppercase tracking-wider">
@@ -199,7 +197,6 @@ export default function AuthPage() {
               </span>
             </div>
 
-            {/* Headline */}
             <h1 className="font-display text-3xl md:text-5xl font-extrabold leading-[1.15] text-on-surface tracking-tight">
               Protect Every Journey <br />
               <span className="text-gradient-primary">with Intelligent Driver Monitoring</span>
@@ -210,7 +207,6 @@ export default function AuthPage() {
               and predictive safety intelligence.
             </p>
 
-            {/* Dashboard Preview Graphic */}
             <div className="relative rounded-2xl overflow-hidden border border-border bg-card shadow-xl group">
               <img
                 src={DASHBOARD_PREVIEW_IMG}
@@ -218,7 +214,6 @@ export default function AuthPage() {
                 className="w-full aspect-[16/9] object-cover opacity-90 transition-transform duration-700 group-hover:scale-[1.02]"
               />
 
-              {/* HUD Badge 1 */}
               <div className="absolute top-4 left-4 bg-card/90 backdrop-blur-md px-3.5 py-2 rounded-xl border border-border flex items-center gap-2 shadow-md">
                 <ShieldCheck className="text-emerald-500" size={18} />
                 <div>
@@ -229,7 +224,6 @@ export default function AuthPage() {
                 </div>
               </div>
 
-              {/* HUD Badge 2 */}
               <div className="absolute bottom-4 right-4 bg-card/90 backdrop-blur-md px-3.5 py-2 rounded-xl border border-border flex items-center gap-2.5 shadow-md">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 pulse-dot" />
                 <span className="text-xs font-bold text-on-surface font-mono">AI MONITORING ACTIVE</span>
@@ -237,11 +231,10 @@ export default function AuthPage() {
             </div>
           </motion.div>
 
-          {/* RIGHT SIDE — Authentication Card (5 cols on Desktop) */}
+          {/* RIGHT SIDE — Authentication Card */}
           <div className="lg:col-span-6 xl:col-span-5 flex justify-center w-full">
             <div className="w-full max-w-md bg-card border border-border rounded-2xl p-6 sm:p-8 shadow-xl backdrop-blur-md relative transition-all duration-300">
               <AnimatePresence mode="wait">
-                {/* ── SIGN IN FORM ── */}
                 {mode === 'signin' ? (
                   <motion.div
                     key="signin"
@@ -256,7 +249,6 @@ export default function AuthPage() {
                       <p className="text-sm text-on-surface-variant">Sign in to continue to your dashboard.</p>
                     </div>
 
-                    {/* Google OAuth Button */}
                     <button
                       type="button"
                       onClick={handleGoogleAuth}
@@ -284,7 +276,6 @@ export default function AuthPage() {
                       Continue with Google
                     </button>
 
-                    {/* Divider */}
                     <div className="relative flex items-center justify-center my-4">
                       <div className="w-full border-t border-border" />
                       <span className="absolute bg-card px-3 text-xs text-on-surface-variant font-semibold tracking-wider uppercase">
@@ -293,7 +284,6 @@ export default function AuthPage() {
                     </div>
 
                     <form onSubmit={handleSignInSubmit} className="space-y-4">
-                      {/* Email Input */}
                       <div>
                         <label className="block text-xs font-semibold text-on-surface uppercase tracking-wider mb-1.5">
                           Email Address
@@ -319,7 +309,6 @@ export default function AuthPage() {
                         {errors.email && <p className="text-xs text-rose-500 mt-1">{errors.email}</p>}
                       </div>
 
-                      {/* Password Input */}
                       <div>
                         <label className="block text-xs font-semibold text-on-surface uppercase tracking-wider mb-1.5">
                           Password
@@ -352,7 +341,6 @@ export default function AuthPage() {
                         {errors.password && <p className="text-xs text-rose-500 mt-1">{errors.password}</p>}
                       </div>
 
-                      {/* Remember & Forgot */}
                       <div className="flex items-center justify-between pt-1 text-xs">
                         <label className="flex items-center gap-2 cursor-pointer text-on-surface-variant hover:text-on-surface">
                           <input
@@ -372,7 +360,6 @@ export default function AuthPage() {
                         </button>
                       </div>
 
-                      {/* Sign In Button */}
                       <Button
                         type="submit"
                         variant="primary"
@@ -393,7 +380,6 @@ export default function AuthPage() {
                       </Button>
                     </form>
 
-                    {/* Bottom Link */}
                     <div className="text-center pt-2 border-t border-border/60">
                       <p className="text-xs text-on-surface-variant">
                         Don't have an account?{' '}
@@ -410,7 +396,6 @@ export default function AuthPage() {
                     </div>
                   </motion.div>
                 ) : (
-                  /* ── SIGN UP FORM ── */
                   <motion.div
                     key="signup"
                     initial={{ opacity: 0, y: 15 }}
@@ -424,7 +409,6 @@ export default function AuthPage() {
                       <p className="text-sm text-on-surface-variant">Start protecting your fleet today.</p>
                     </div>
 
-                    {/* Google Button */}
                     <button
                       type="button"
                       onClick={handleGoogleAuth}
@@ -460,7 +444,6 @@ export default function AuthPage() {
                     </div>
 
                     <form onSubmit={handleSignUpSubmit} className="space-y-3.5">
-                      {/* Name & Company grid */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
                           <label className="block text-[11px] font-semibold text-on-surface uppercase tracking-wider mb-1">
@@ -507,7 +490,6 @@ export default function AuthPage() {
                         </div>
                       </div>
 
-                      {/* Email */}
                       <div>
                         <label className="block text-[11px] font-semibold text-on-surface uppercase tracking-wider mb-1">
                           Email Address
@@ -530,7 +512,6 @@ export default function AuthPage() {
                         {errors.email && <p className="text-[10px] text-rose-500 mt-0.5">{errors.email}</p>}
                       </div>
 
-                      {/* Password & Confirm */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
                           <label className="block text-[11px] font-semibold text-on-surface uppercase tracking-wider mb-1">
@@ -593,7 +574,6 @@ export default function AuthPage() {
                         </div>
                       </div>
 
-                      {/* Terms checkbox */}
                       <div>
                         <label className="flex items-start gap-2 cursor-pointer text-[11px] text-on-surface-variant leading-tight">
                           <input
@@ -616,7 +596,6 @@ export default function AuthPage() {
                         {errors.agreeTerms && <p className="text-[10px] text-rose-500 mt-0.5">{errors.agreeTerms}</p>}
                       </div>
 
-                      {/* Submit */}
                       <Button
                         type="submit"
                         variant="primary"
@@ -637,7 +616,6 @@ export default function AuthPage() {
                       </Button>
                     </form>
 
-                    {/* Bottom link */}
                     <div className="text-center pt-2 border-t border-border/60">
                       <p className="text-xs text-on-surface-variant">
                         Already have an account?{' '}
@@ -660,12 +638,11 @@ export default function AuthPage() {
         </div>
       </main>
 
-      {/* Footer */}
       <footer className="w-full text-center py-4 text-xs text-on-surface-variant border-t border-border/50">
         © {new Date().getFullYear()} DriverGuard AI. All rights reserved. Encrypted 256-bit Enterprise Protection.
       </footer>
 
-      {/* ── FORGOT PASSWORD MODAL ── */}
+      {/* FORGOT PASSWORD MODAL */}
       <AnimatePresence>
         {showForgotPassword && (
           <div className="fixed inset-0 z-[999] flex items-center justify-center p-4">

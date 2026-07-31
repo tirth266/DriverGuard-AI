@@ -10,8 +10,8 @@ import {
   Siren,
   Building2,
 } from 'lucide-react'
-import SectionTitle from '../Shared/SectionTitle'
-import GlassCard from '../Shared/GlassCard'
+import SectionTitle from '../shared/SectionTitle'
+import GlassCard from '../shared/Card'
 
 const INDUSTRIES = [
   { icon: Truck, title: 'Logistics', description: 'Protect long-haul and last-mile delivery drivers across your entire fleet.' },

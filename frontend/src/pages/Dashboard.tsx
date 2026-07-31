@@ -1,6 +1,6 @@
 import { memo } from 'react'
 import { motion } from 'framer-motion'
-import Dashboard from '../../components/Dashboard/Dashboard'
+import Dashboard from '../components/dashboard/Dashboard'
 
 const pageVariants = {
   initial: { opacity: 0 },

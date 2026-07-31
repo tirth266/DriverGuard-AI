@@ -15,8 +15,8 @@ import {
 } from 'lucide-react'
 import { useScrollY } from '../../hooks/useScrollY'
 import { useAuth } from '../../context/AuthContext'
-import Button from '../Shared/Button'
-import ThemeToggle from '../Shared/ThemeToggle'
+import Button from '../shared/Button'
+import ThemeToggle from './ThemeToggle'
 
 const NAV_LINKS = [
   { label: 'Solutions', href: '#solutions' },
@@ -118,7 +118,7 @@ const Navbar = memo(function Navbar() {
           <ThemeToggle />
 
           {isAuthenticated && user ? (
-            /* ── LOGGED IN CONTROLS ── */
+            /* LOGGED IN CONTROLS */
             <div className="flex items-center gap-3 pl-2 relative">
               {/* Dashboard Direct Button */}
               <Link to="/dashboard">
@@ -276,7 +276,7 @@ const Navbar = memo(function Navbar() {
               </div>
             </div>
           ) : (
-            /* ── UNAUTHENTICATED CONTROLS ── */
+            /* UNAUTHENTICATED CONTROLS */
             <>
               <Link to="/auth">
                 <Button variant="glass" size="sm">

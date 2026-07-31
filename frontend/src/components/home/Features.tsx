@@ -11,8 +11,8 @@ import {
   FileText,
   BellRing,
 } from 'lucide-react'
-import GlassCard from '../Shared/GlassCard'
-import SectionTitle from '../Shared/SectionTitle'
+import GlassCard from '../shared/Card'
+import SectionTitle from '../shared/SectionTitle'
 
 const FEATURES = [
   {

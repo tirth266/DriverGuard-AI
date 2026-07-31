@@ -1,8 +1,8 @@
 import { memo } from 'react'
 import { motion } from 'framer-motion'
 import { CheckCircle, XCircle, ShieldCheck } from 'lucide-react'
-import Button from '../Shared/Button'
-import GlassCard from '../Shared/GlassCard'
+import Button from '../shared/Button'
+import GlassCard from '../shared/Card'
 
 const HERO_IMAGE =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuCcKaLxmdIZwnR0lQmtyJqnulBLej0a0G8kFHVn1alPzu5Bih45tWBAph9k-Y_O-mDBiS96RZ6X6Pm6niij5B-CplXhXHUVFwTuaIm9ON1SnuBg7edeuTBmwyT-UrudvWqkJQYfwkRmLV4JkTFdmL0Za-_fIa5CC0_p2urfVKpFZ5yHicpcA_Xzpw1Baf5ENstaxctcRb9e5Ob1HFkQ9ZCUPonuqkQZT2f-2yawldUCYahojUrdLzzydNygLW_VYW37cVHmdtONPi4'

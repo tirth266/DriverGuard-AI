@@ -1,9 +1,9 @@
 import { memo } from 'react'
 import { motion } from 'framer-motion'
 import { Check } from 'lucide-react'
-import SectionTitle from '../Shared/SectionTitle'
-import Button from '../Shared/Button'
-import GlassCard from '../Shared/GlassCard'
+import SectionTitle from '../shared/SectionTitle'
+import Button from '../shared/Button'
+import GlassCard from '../shared/Card'
 
 const PLANS = [
   {
