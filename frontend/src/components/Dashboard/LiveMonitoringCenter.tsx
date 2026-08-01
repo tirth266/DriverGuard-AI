@@ -1,0 +1,550 @@
+import { memo, useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import {
+  Radio,
+  Search,
+  Camera,
+  Maximize2,
+  Minimize2,
+  CheckCircle2,
+  AlertTriangle,
+  Eye,
+  Smartphone,
+  ShieldAlert,
+  Shield,
+  Truck,
+  User as UserIcon,
+} from 'lucide-react'
+import { useToast } from '../../context/ToastContext'
+
+/* ─── Mock Driver List with Individual Telemetry ───────────── */
+
+interface FleetDriver {
+  id: string
+  name: string
+  vehicle: string
+  status: 'online' | 'offline' | 'alert'
+  score: number
+  drowsiness: number
+  phoneDetected: boolean
+  seatbeltOk: boolean
+  smokingDetected: boolean
+  eyesOnRoad: boolean
+  handsOnWheel: boolean
+  feedImage: string
+  events: { time: string; label: string; dot: string }[]
+}
+
+const FLEET_DRIVERS: FleetDriver[] = [
+  {
+    id: 'DRV-101',
+    name: 'John Driver',
+    vehicle: 'Freightliner Cascadia #4082',
+    status: 'online',
+    score: 98,
+    drowsiness: 2,
+    phoneDetected: false,
+    seatbeltOk: true,
+    smokingDetected: false,
+    eyesOnRoad: true,
+    handsOnWheel: true,
+    feedImage: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCcKaLxmdIZwnR0lQmtyJqnulBLej0a0G8kFHVn1alPzu5Bih45tWBAph9k-Y_O-mDBiS96RZ6X6Pm6niij5B-CplXhXHUVFwTuaIm9ON1SnuBg7edeuTBmwyT-UrudvWqkJQYfwkRmLV4JkTFdmL0Za-_fIa5CC0_p2urfVKpFZ5yHicpcA_Xzpw1Baf5ENstaxctcRb9e5Ob1HFkQ9ZCUPonuqkQZT2f-2yawldUCYahojUrdLzzydNygLW_VYW37cVHmdtONPi4',
+    events: [
+      { time: '11:08 AM', label: 'Safe Driving Restored', dot: 'bg-emerald-500' },
+      { time: '10:45 AM', label: 'Brief Eye Disengagement', dot: 'bg-amber-400' },
+      { time: '10:12 AM', label: 'Shift Started', dot: 'bg-primary' },
+    ],
+  },
+  {
+    id: 'DRV-102',
+    name: 'Marcus Vance',
+    vehicle: 'Kenworth T680 #2014',
+    status: 'alert',
+    score: 74,
+    drowsiness: 24,
+    phoneDetected: true,
+    seatbeltOk: true,
+    smokingDetected: false,
+    eyesOnRoad: false,
+    handsOnWheel: false,
+    feedImage: 'https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?auto=format&fit=crop&w=800&q=80',
+    events: [
+      { time: '11:15 AM', label: 'Fatigue Warning Triggered', dot: 'bg-rose-500' },
+      { time: '11:10 AM', label: 'Phone Usage Detected', dot: 'bg-rose-500' },
+      { time: '10:30 AM', label: 'Rest Break Requested', dot: 'bg-amber-500' },
+    ],
+  },
+  {
+    id: 'DRV-103',
+    name: 'Elena Rostova',
+    vehicle: 'Volvo VNL 860 #1093',
+    status: 'online',
+    score: 95,
+    drowsiness: 4,
+    phoneDetected: false,
+    seatbeltOk: true,
+    smokingDetected: false,
+    eyesOnRoad: true,
+    handsOnWheel: true,
+    feedImage: 'https://images.unsplash.com/photo-1511919884226-fd3cad34687c?auto=format&fit=crop&w=800&q=80',
+    events: [
+      { time: '11:02 AM', label: 'Safe Driving Restored', dot: 'bg-emerald-500' },
+      { time: '10:15 AM', label: 'Pre-Trip Inspection Verified', dot: 'bg-emerald-500' },
+    ],
+  },
+  {
+    id: 'DRV-104',
+    name: 'David Miller',
+    vehicle: 'Peterbilt 579 #3021',
+    status: 'offline',
+    score: 91,
+    drowsiness: 0,
+    phoneDetected: false,
+    seatbeltOk: true,
+    smokingDetected: false,
+    eyesOnRoad: true,
+    handsOnWheel: true,
+    feedImage: 'https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?auto=format&fit=crop&w=800&q=80',
+    events: [
+      { time: '09:40 AM', label: 'Engine Off - Rest Standby', dot: 'bg-gray-400' },
+    ],
+  },
+  {
+    id: 'DRV-105',
+    name: 'Samantha Reed',
+    vehicle: 'Mack Anthem #5012',
+    status: 'online',
+    score: 99,
+    drowsiness: 1,
+    phoneDetected: false,
+    seatbeltOk: true,
+    smokingDetected: false,
+    eyesOnRoad: true,
+    handsOnWheel: true,
+    feedImage: 'https://images.unsplash.com/photo-1580273916550-e323be2ae537?auto=format&fit=crop&w=800&q=80',
+    events: [
+      { time: '11:20 AM', label: 'Optimal Driving Performance', dot: 'bg-emerald-500' },
+      { time: '10:45 AM', label: 'Shift Commenced', dot: 'bg-primary' },
+    ],
+  },
+]
+
+/* ─── Circular Safety Score Gauge ─────────────────────────── */
+
+function CircularGauge({ value, size = 84 }: { value: number; size?: number }) {
+  const radius = (size - 10) / 2
+  const circ = 2 * Math.PI * radius
+  const offset = circ - (value / 100) * circ
+  const color = value >= 90 ? '#10b981' : value >= 80 ? '#f59e0b' : '#f43f5e'
+  return (
+    <svg width={size} height={size} className="rotate-[-90deg]" aria-hidden="true">
+      <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="currentColor" className="text-border" strokeWidth={6} />
+      <motion.circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        stroke={color}
+        strokeWidth={6}
+        strokeLinecap="round"
+        strokeDasharray={circ}
+        initial={{ strokeDashoffset: circ }}
+        animate={{ strokeDashoffset: offset }}
+        transition={{ duration: 0.8, ease: 'easeOut' }}
+      />
+    </svg>
+  )
+}
+
+const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
+  const toast = useToast()
+
+  // Selected driver state
+  const [selectedDriverId, setSelectedDriverId] = useState<string>('DRV-101')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [filterStatus, setFilterStatus] = useState<'all' | 'online' | 'offline' | 'alert'>('all')
+
+  // Feed control states
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [isRecording, setIsRecording] = useState(true)
+
+  const activeDriver = FLEET_DRIVERS.find(d => d.id === selectedDriverId) || FLEET_DRIVERS[0]
+
+  const filteredDrivers = FLEET_DRIVERS.filter(d => {
+    const matchesSearch = d.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          d.vehicle.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          d.id.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesFilter = filterStatus === 'all' || d.status === filterStatus
+    return matchesSearch && matchesFilter
+  })
+
+  const handleSnapshot = () => {
+    toast.success('Snapshot Captured', `Saved frame from ${activeDriver.name} (${activeDriver.vehicle})`)
+  }
+
+  return (
+    <div className="w-full min-h-[calc(100vh-56px)] bg-background text-on-surface flex flex-col transition-colors duration-300">
+      
+      {/* ── TOP HEADER STRIP ──────────────────────────────── */}
+      <div className="px-4 py-3 bg-surface border-b border-border flex items-center justify-between gap-4 flex-wrap flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="h-8 w-8 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+            <Radio size={18} className="animate-pulse text-emerald-500" />
+          </div>
+          <div>
+            <h1 className="font-display text-base md:text-lg font-extrabold tracking-tight">
+              Live AI Monitoring Center
+            </h1>
+            <p className="text-[11px] text-on-surface-variant">
+              Active Stream: <span className="font-bold text-on-surface">{activeDriver.name}</span> ({activeDriver.vehicle})
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 text-xs font-mono">
+          <span className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/20">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 pulse-dot" /> STREAM LATENCY: 38ms
+          </span>
+        </div>
+      </div>
+
+      {/* ── MAIN THREE-PANEL LAYOUT ───────────────────────── */}
+      <div className="flex-1 flex flex-col lg:flex-row gap-4 p-4 min-h-0">
+
+        {/* ━━━ 1. LEFT SIDEBAR: DRIVER LIST ━━━━━━━━━━━━━━━━━ */}
+        <div className="w-full lg:w-72 bg-card border border-border rounded-2xl p-4 shadow-sm flex flex-col gap-3 flex-shrink-0">
+          <div className="flex items-center justify-between border-b border-border pb-2.5">
+            <span className="text-xs font-extrabold uppercase tracking-wider text-on-surface flex items-center gap-2">
+              <UserIcon size={14} className="text-primary" /> Fleet Roster
+            </span>
+            <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-bold">
+              {FLEET_DRIVERS.length} Drivers
+            </span>
+          </div>
+
+          {/* Filter Chips */}
+          <div className="flex items-center justify-between gap-1 bg-surface p-1 rounded-xl border border-border">
+            {(['all', 'online', 'alert', 'offline'] as const).map(st => (
+              <button
+                key={st}
+                onClick={() => setFilterStatus(st)}
+                className={`flex-1 py-1 rounded-lg text-[10px] font-bold capitalize transition-all ${
+                  filterStatus === st
+                    ? 'bg-card text-on-surface shadow-xs border border-border'
+                    : 'text-on-surface-variant hover:text-on-surface'
+                }`}
+              >
+                {st}
+              </button>
+            ))}
+          </div>
+
+          {/* Search Input */}
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-2.5 text-on-surface-variant" />
+            <input
+              type="text"
+              placeholder="Search drivers or vehicles..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              className="w-full pl-8 pr-3 py-2 rounded-xl border border-border bg-surface text-xs text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+          </div>
+
+          {/* Driver Selection List */}
+          <div className="space-y-1.5 overflow-y-auto flex-1 max-h-[350px] lg:max-h-none pr-1">
+            {filteredDrivers.map(driver => {
+              const isSelected = driver.id === activeDriver.id
+              return (
+                <button
+                  key={driver.id}
+                  onClick={() => setSelectedDriverId(driver.id)}
+                  className={`w-full text-left p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 ${
+                    isSelected
+                      ? 'bg-primary/10 border-primary shadow-xs'
+                      : 'bg-surface hover:bg-card border-border'
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <p className={`text-xs font-bold truncate ${isSelected ? 'text-primary' : 'text-on-surface'}`}>
+                      {driver.name}
+                    </p>
+                    <p className="text-[10px] text-on-surface-variant truncate">{driver.vehicle}</p>
+                  </div>
+
+                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border flex-shrink-0 ${
+                    driver.status === 'online'
+                      ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                      : driver.status === 'alert'
+                      ? 'bg-rose-500/10 text-rose-500 border-rose-500/20'
+                      : 'bg-surface text-on-surface-variant border-border'
+                  }`}>
+                    {driver.status}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* ━━━ 2. CENTER: LARGE LIVE CAMERA FEED (16:9) ━━━━━━━ */}
+        <div className="flex-1 flex flex-col gap-4 min-w-0">
+          <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-xl flex flex-col h-full">
+
+            {/* Toolbar */}
+            <div className="px-4 py-3 bg-surface border-b border-border flex items-center justify-between gap-3 flex-wrap flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/20 text-[11px]">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 pulse-dot" /> LIVE 1080P
+                </span>
+                <span className="text-xs font-mono text-on-surface font-semibold hidden sm:block">
+                  {activeDriver.vehicle} • {activeDriver.name}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsRecording(r => !r)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold transition-colors ${
+                    isRecording
+                      ? 'bg-rose-500/10 text-rose-500 border-rose-500/20'
+                      : 'bg-surface text-on-surface-variant border-border'
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${isRecording ? 'bg-rose-500 animate-ping' : 'bg-gray-400'}`} />
+                  {isRecording ? 'REC' : 'PAUSED'}
+                </button>
+
+                <button
+                  onClick={handleSnapshot}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface hover:bg-card border border-border text-on-surface-variant hover:text-on-surface transition-colors text-xs font-medium"
+                >
+                  <Camera size={13} />
+                  <span className="hidden sm:inline">Snapshot</span>
+                </button>
+
+                <button
+                  onClick={() => setIsFullscreen(true)}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary text-white hover:opacity-90 transition-opacity text-xs font-medium"
+                >
+                  <Maximize2 size={13} />
+                  <span className="hidden sm:inline">Fullscreen</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Camera Display (16:9 Aspect Ratio) */}
+            <div className="relative bg-black flex-1 aspect-video overflow-hidden group">
+              <motion.img
+                key={activeDriver.id}
+                initial={{ opacity: 0.6, scale: 0.99 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.4 }}
+                src={activeDriver.feedImage}
+                alt={activeDriver.name}
+                className="w-full h-full object-cover"
+              />
+
+              {/* Bounding box AI overlay */}
+              <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 550 380" preserveAspectRatio="none">
+                <rect
+                  x="170" y="30" width="200" height="180" fill="none"
+                  stroke={activeDriver.phoneDetected || !activeDriver.eyesOnRoad ? '#f43f5e' : '#22c55e'}
+                  strokeWidth="1.5" strokeDasharray="6,3" opacity="0.9"
+                />
+                <line x1="170" y1="30" x2="190" y2="30" stroke={activeDriver.phoneDetected ? '#f43f5e' : '#22c55e'} strokeWidth="2.5" />
+                <line x1="170" y1="30" x2="170" y2="50" stroke={activeDriver.phoneDetected ? '#f43f5e' : '#22c55e'} strokeWidth="2.5" />
+                <line x1="370" y1="30" x2="350" y2="30" stroke={activeDriver.phoneDetected ? '#f43f5e' : '#22c55e'} strokeWidth="2.5" />
+                <line x1="370" y1="30" x2="370" y2="50" stroke={activeDriver.phoneDetected ? '#f43f5e' : '#22c55e'} strokeWidth="2.5" />
+              </svg>
+
+              {/* Scanning laser animation */}
+              <motion.div
+                className="absolute left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-emerald-400/70 to-transparent pointer-events-none"
+                animate={{ top: ['3%', '94%', '3%'] }}
+                transition={{ duration: 5, repeat: Infinity, ease: 'linear' }}
+              />
+
+              {/* Top HUD */}
+              <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 text-white flex items-center gap-2 text-xs font-mono">
+                <Radio size={13} className="text-emerald-400 animate-pulse" />
+                AI CABIN SAFETY SCANNER
+              </div>
+
+              {/* Status Alert Overlay if Alert */}
+              {activeDriver.phoneDetected && (
+                <div className="absolute top-3 right-3 bg-rose-600 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-lg animate-bounce">
+                  <ShieldAlert size={14} /> Phone Detected
+                </div>
+              )}
+            </div>
+
+            {/* Bottom Status Strip */}
+            <div className="px-4 py-2 bg-surface border-t border-border flex items-center justify-between text-xs text-on-surface-variant font-medium flex-shrink-0">
+              <span>VEHICLE: <span className="font-bold text-on-surface">{activeDriver.vehicle}</span></span>
+              <span>SAFETY SCORE: <span className="font-mono font-bold text-emerald-500">{activeDriver.score}/100</span></span>
+            </div>
+          </div>
+        </div>
+
+        {/* ━━━ 3. RIGHT PANEL: AI DETECTION & SAFETY SCORE ━━━━━━ */}
+        <div className="w-full lg:w-72 bg-card border border-border rounded-2xl p-4 shadow-sm flex flex-col gap-4 flex-shrink-0">
+          <div className="flex items-center justify-between border-b border-border pb-2.5">
+            <span className="text-xs font-extrabold uppercase tracking-wider text-on-surface flex items-center gap-2">
+              <Shield size={14} className="text-primary" /> AI Safety Panel
+            </span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${
+              activeDriver.status === 'online'
+                ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                : activeDriver.status === 'alert'
+                ? 'bg-rose-500/10 text-rose-500 border-rose-500/20'
+                : 'bg-surface text-on-surface-variant border-border'
+            }`}>
+              {activeDriver.status}
+            </span>
+          </div>
+
+          {/* Safety Score Gauge */}
+          <div className="flex items-center gap-3 p-3 rounded-xl bg-surface border border-border">
+            <div className="relative flex-shrink-0">
+              <CircularGauge value={activeDriver.score} size={76} />
+              <div className="absolute inset-0 flex items-center justify-center rotate-[90deg]">
+                <span className="text-xs font-extrabold text-on-surface font-mono">{activeDriver.score}%</span>
+              </div>
+            </div>
+            <div>
+              <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider block mb-0.5">
+                Safety Score
+              </span>
+              <span className="text-lg font-extrabold text-on-surface font-mono">
+                {activeDriver.score}<span className="text-xs text-primary font-medium">/100</span>
+              </span>
+              <p className="text-[10px] text-emerald-500 font-semibold mt-0.5">
+                {activeDriver.score >= 90 ? 'High Compliance' : 'Review Advised'}
+              </p>
+            </div>
+          </div>
+
+          {/* AI Detections List */}
+          <div className="space-y-2 text-xs">
+            <div className="flex items-center justify-between py-1.5 border-b border-border">
+              <span className="text-on-surface-variant">Seat Belt</span>
+              <span className={`font-bold flex items-center gap-1 ${activeDriver.seatbeltOk ? 'text-emerald-500' : 'text-rose-500'}`}>
+                {activeDriver.seatbeltOk ? <CheckCircle2 size={13} /> : <ShieldAlert size={13} />}
+                {activeDriver.seatbeltOk ? 'COMPLIANT' : 'UNBUCKLED'}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between py-1.5 border-b border-border">
+              <span className="text-on-surface-variant">Phone Usage</span>
+              <span className={`font-bold flex items-center gap-1 ${!activeDriver.phoneDetected ? 'text-emerald-500' : 'text-rose-500'}`}>
+                {!activeDriver.phoneDetected ? <CheckCircle2 size={13} /> : <Smartphone size={13} />}
+                {!activeDriver.phoneDetected ? 'NONE' : 'DETECTED'}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between py-1.5 border-b border-border">
+              <span className="text-on-surface-variant">Smoking</span>
+              <span className={`font-bold flex items-center gap-1 ${!activeDriver.smokingDetected ? 'text-emerald-500' : 'text-rose-500'}`}>
+                <CheckCircle2 size={13} /> NONE
+              </span>
+            </div>
+
+            <div className="py-1.5 border-b border-border space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-on-surface-variant">Fatigue Risk</span>
+                <span className="font-bold text-emerald-500">{activeDriver.drowsiness}%</span>
+              </div>
+              <div className="w-full h-1.5 bg-background rounded-full overflow-hidden">
+                <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${activeDriver.drowsiness}%` }} />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between py-1.5 border-b border-border">
+              <span className="text-on-surface-variant">Eyes on Road</span>
+              <span className={`font-bold flex items-center gap-1 ${activeDriver.eyesOnRoad ? 'text-emerald-500' : 'text-rose-500'}`}>
+                {activeDriver.eyesOnRoad ? <Eye size={13} /> : <AlertTriangle size={13} />}
+                {activeDriver.eyesOnRoad ? 'FOCUSED' : 'DISTRACTED'}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between py-1.5 border-b border-border">
+              <span className="text-on-surface-variant">Hands on Wheel</span>
+              <span className={`font-bold flex items-center gap-1 ${activeDriver.handsOnWheel ? 'text-emerald-500' : 'text-amber-500'}`}>
+                {activeDriver.handsOnWheel ? 'BOTH' : 'ONE HAND'}
+              </span>
+            </div>
+          </div>
+
+          {/* Current Vehicle Details */}
+          <div className="mt-auto p-3 rounded-xl bg-surface border border-border space-y-1 text-xs">
+            <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider block">
+              Current Vehicle
+            </span>
+            <p className="font-bold text-on-surface flex items-center gap-1.5">
+              <Truck size={13} className="text-primary" /> {activeDriver.vehicle}
+            </p>
+          </div>
+        </div>
+
+      </div>
+
+      {/* ━━━ 4. BOTTOM: RECENT EVENTS TIMELINE ━━━━━━━━━━━━━━━ */}
+      <div className="mx-4 mb-4">
+        <div className="bg-card border border-border rounded-2xl p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-extrabold uppercase tracking-wider text-on-surface flex items-center gap-2">
+              <Radio size={14} className="text-primary" /> Recent Events Timeline ({activeDriver.name})
+            </span>
+            <span className="text-[10px] text-on-surface-variant">Real-time driver log</span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {activeDriver.events.map((ev, i) => (
+              <div key={i} className="flex items-center gap-2.5 p-2.5 rounded-xl bg-surface border border-border">
+                <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${ev.dot}`} />
+                <div>
+                  <p className="text-xs font-bold text-on-surface">{ev.label}</p>
+                  <span className="text-[10px] text-on-surface-variant font-mono">{ev.time}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ━━━ FULLSCREEN MODAL ━━━ */}
+      <AnimatePresence>
+        {isFullscreen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[9999] bg-black flex flex-col"
+          >
+            <div className="h-12 bg-black/80 backdrop-blur-md px-4 flex items-center justify-between text-white border-b border-white/10 flex-shrink-0">
+              <div className="flex items-center gap-2.5">
+                <Radio size={15} className="text-emerald-400 animate-pulse" />
+                <span className="font-bold text-sm font-mono">
+                  LIVE MONITORING • {activeDriver.name} ({activeDriver.vehicle})
+                </span>
+              </div>
+              <button
+                onClick={() => setIsFullscreen(false)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-colors"
+              >
+                <Minimize2 size={14} /> Exit Fullscreen
+              </button>
+            </div>
+            <div className="flex-1 relative overflow-hidden">
+              <img src={activeDriver.feedImage} alt="Fullscreen feed" className="w-full h-full object-contain" />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+    </div>
+  )
+})
+
+export default LiveMonitoringCenter

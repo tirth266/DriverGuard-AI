@@ -1,56 +1,65 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 
-type Theme = 'light' | 'dark'
+type Theme = 'dark' | 'light'
 
-interface ThemeContextValue {
+interface ThemeContextType {
   theme: Theme
   toggleTheme: () => void
+  setTheme: (theme: Theme) => void
 }
 
-const ThemeContext = createContext<ThemeContextValue | undefined>(undefined)
+const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
 
-function getInitialTheme(): Theme {
-  if (typeof window === 'undefined') return 'light'
-
-  // 1. Check localStorage
-  const stored = localStorage.getItem('driverguard-theme') as Theme | null
-  if (stored === 'light' || stored === 'dark') return stored
-
-  // 2. Check OS preference
-  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-    return 'dark'
-  }
-
-  // 3. Default to light
-  return 'light'
-}
+const THEME_KEY = 'driverguard_theme_preference'
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<Theme>(getInitialTheme)
+  const [theme, setThemeState] = useState<Theme>(() => {
+    // 1. Check local storage preference
+    const savedTheme = localStorage.getItem(THEME_KEY) as Theme | null
+    if (savedTheme === 'dark' || savedTheme === 'light') {
+      return savedTheme
+    }
+    // 2. Fallback to system OS preference
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+      return 'light'
+    }
+    return 'dark'
+  })
 
+  // Synchronize DOM document class and CSS state
   useEffect(() => {
     const root = document.documentElement
     if (theme === 'dark') {
       root.classList.add('dark')
+      root.classList.remove('light')
+      root.style.colorScheme = 'dark'
     } else {
+      root.classList.add('light')
       root.classList.remove('dark')
+      root.style.colorScheme = 'light'
     }
-    localStorage.setItem('driverguard-theme', theme)
+    localStorage.setItem(THEME_KEY, theme)
   }, [theme])
 
   const toggleTheme = () => {
-    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))
+    setThemeState((prev) => (prev === 'dark' ? 'light' : 'dark'))
+  }
+
+  const setTheme = (newTheme: Theme) => {
+    setThemeState(newTheme)
   }
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme }}>
+    <ThemeContext.Provider value={{ theme, toggleTheme, setTheme }}>
       {children}
     </ThemeContext.Provider>
   )
 }
 
-export function useTheme(): ThemeContextValue {
-  const ctx = useContext(ThemeContext)
-  if (!ctx) throw new Error('useTheme must be used within a ThemeProvider')
-  return ctx
+export function useTheme() {
+  const context = useContext(ThemeContext)
+  if (!context) {
+    throw new Error('useTheme must be used within a ThemeProvider')
+  }
+  return context
 }

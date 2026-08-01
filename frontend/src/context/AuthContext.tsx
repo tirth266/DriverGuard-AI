@@ -1,13 +1,27 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 import { useToast } from './ToastContext'
+
+/* ─── Types ─────────────────────────────────────────────── */
+
+export type AccountType = 'personal' | 'business' | null
 
 export interface User {
   id: string
   name: string
   email: string
   company: string
+  role: string
   avatar?: string
-  role?: string
+  accountType: AccountType
+  isFirstLogin: boolean
+  companySetupComplete: boolean
+}
+
+export interface CompanySetupData {
+  companyName: string
+  fleetSize: string
+  country: string
+  industry: string
 }
 
 interface AuthContextType {
@@ -15,203 +29,198 @@ interface AuthContextType {
   token: string | null
   isAuthenticated: boolean
   isLoading: boolean
-  login: (email: string, password: string, rememberMe?: boolean) => Promise<boolean>
-  signup: (name: string, company: string, email: string, password: string) => Promise<boolean>
+  login: (email: string, pass: string, rememberMe?: boolean) => Promise<boolean>
+  signup: (name: string, company: string, email: string, pass: string) => Promise<boolean>
   loginWithGoogle: () => Promise<boolean>
-  logout: () => void
   forgotPassword: (email: string) => Promise<boolean>
+  logout: () => void
+  setAccountType: (type: AccountType) => void
+  completeCompanySetup: (data: CompanySetupData) => void
 }
 
-const AUTH_TOKEN_KEY = 'driverguard_auth_token'
-const AUTH_USER_KEY = 'driverguard_user_data'
+/* ─── Storage keys ───────────────────────────────────────── */
+
+const TOKEN_KEY = 'driverguard_auth_token'
+const USER_KEY  = 'driverguard_user_data'
+
+/* ─── Mock defaults ──────────────────────────────────────── */
+
+const MOCK_USER: User = {
+  id: 'usr_8921a',
+  name: 'Sarah Connor',
+  email: 'sarah.connor@skyfleet.io',
+  company: 'Skyline Transit Operators',
+  role: 'Fleet Manager',
+  avatar:
+    'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=250&q=80',
+  accountType: null,
+  isFirstLogin: true,
+  companySetupComplete: false,
+}
+
+/* ─── Context ────────────────────────────────────────────── */
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-// Helper to generate mock JWT token
-function generateMockJWT(user: User): string {
-  const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
-  const payload = btoa(
-    JSON.stringify({
-      sub: user.id,
-      email: user.email,
-      name: user.name,
-      company: user.company,
-      exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7, // 7 days
-    })
-  )
-  const signature = 'sA7x9_mK3vQ1ZpL5wR8yT2nB4'
-  return `${header}.${payload}.${signature}`
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
+  const [user, setUser]   = useState<User | null>(null)
   const [token, setToken] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState<boolean>(true)
+  const [isLoading, setIsLoading] = useState(true)
   const toast = useToast()
 
-  // Initialize session from storage
+  /* Restore session on boot */
   useEffect(() => {
     try {
-      const storedToken = localStorage.getItem(AUTH_TOKEN_KEY) || sessionStorage.getItem(AUTH_TOKEN_KEY)
-      const storedUser = localStorage.getItem(AUTH_USER_KEY) || sessionStorage.getItem(AUTH_USER_KEY)
-
+      const storedToken = localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY)
+      const storedUser  = localStorage.getItem(USER_KEY)  || sessionStorage.getItem(USER_KEY)
       if (storedToken && storedUser) {
         setToken(storedToken)
         setUser(JSON.parse(storedUser))
       }
-    } catch (e) {
-      console.error('Failed to restore auth session:', e)
+    } catch {
+      localStorage.removeItem(TOKEN_KEY)
+      localStorage.removeItem(USER_KEY)
     } finally {
       setIsLoading(false)
     }
   }, [])
 
-  // Manual Sign In
-  const login = async (email: string, password: string, rememberMe: boolean = true): Promise<boolean> => {
+  /* Persist user changes back to storage automatically */
+  const persistUser = useCallback((updatedUser: User, rememberMe = true) => {
+    const storage = rememberMe ? localStorage : sessionStorage
+    storage.setItem(USER_KEY, JSON.stringify(updatedUser))
+  }, [])
+
+  /* ── Login ─────────────────────────────────────────────── */
+  const login = async (email: string, _pass: string, rememberMe = true): Promise<boolean> => {
     setIsLoading(true)
-    // Simulate API network latency
-    await new Promise((resolve) => setTimeout(resolve, 800))
+    await new Promise(r => setTimeout(r, 800))
 
-    if (password === 'wrong') {
-      setIsLoading(false)
-      toast.error('Authentication Failed', 'Invalid password. Please check your credentials.')
-      return false
-    }
+    const mockToken = 'mock_driverguard_jwt_token'
+    const authUser: User = { ...MOCK_USER, email: email || MOCK_USER.email }
 
-    // Derive name from email if not existing
-    const namePart = email.split('@')[0]
-    const formattedName = namePart.charAt(0).toUpperCase() + namePart.slice(1).replace(/[._]/g, ' ')
-
-    const authenticatedUser: User = {
-      id: 'usr_' + Math.random().toString(36).substring(2, 9),
-      name: formattedName || 'Fleet Operator',
-      email: email.toLowerCase(),
-      company: 'Global Fleet Logistics',
-      avatar: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80`,
-      role: 'Fleet Manager',
-    }
-
-    const jwtToken = generateMockJWT(authenticatedUser)
-
-    setUser(authenticatedUser)
-    setToken(jwtToken)
+    setToken(mockToken)
+    setUser(authUser)
 
     const storage = rememberMe ? localStorage : sessionStorage
-    storage.setItem(AUTH_TOKEN_KEY, jwtToken)
-    storage.setItem(AUTH_USER_KEY, JSON.stringify(authenticatedUser))
+    storage.setItem(TOKEN_KEY, mockToken)
+    persistUser(authUser, rememberMe)
 
     setIsLoading(false)
-    toast.success(`Welcome back, ${authenticatedUser.name}!`, 'Access granted to fleet dashboard.')
+    toast.success('Welcome Back!', `Logged in as ${authUser.name}`)
     return true
   }
 
-  // Manual Sign Up
-  const signup = async (
-    name: string,
-    company: string,
-    email: string,
-    password: string
-  ): Promise<boolean> => {
+  /* ── Signup ────────────────────────────────────────────── */
+  const signup = async (name: string, company: string, email: string, _pass: string): Promise<boolean> => {
     setIsLoading(true)
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    await new Promise(r => setTimeout(r, 1000))
 
-    // Check mock existing user
-    if (email.toLowerCase() === 'test@exists.com') {
-      setIsLoading(false)
-      toast.error('Account Conflict', 'An account with this email address already exists.')
-      return false
-    }
-
+    const mockToken = 'mock_signup_jwt_token'
     const newUser: User = {
-      id: 'usr_' + Math.random().toString(36).substring(2, 9),
-      name: name.trim(),
-      email: email.toLowerCase().trim(),
-      company: company.trim(),
-      avatar: `https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80`,
-      role: 'Company Administrator',
+      id: `usr_${Math.random().toString(36).substring(2, 9)}`,
+      name,
+      email,
+      company,
+      role: 'Account Owner',
+      accountType: null,
+      isFirstLogin: true,
+      companySetupComplete: false,
     }
 
-    const jwtToken = generateMockJWT(newUser)
-
+    setToken(mockToken)
     setUser(newUser)
-    setToken(jwtToken)
-
-    localStorage.setItem(AUTH_TOKEN_KEY, jwtToken)
-    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(newUser))
+    localStorage.setItem(TOKEN_KEY, mockToken)
+    persistUser(newUser)
 
     setIsLoading(false)
-    toast.success('Account Created!', `Welcome to DriverGuard AI, ${newUser.name}.`)
+    toast.success('Account Created!', `Welcome to DriverGuard AI, ${name}!`)
     return true
   }
 
-  // Google OAuth Login
+  /* ── Google login ──────────────────────────────────────── */
   const loginWithGoogle = async (): Promise<boolean> => {
     setIsLoading(true)
-    await new Promise((resolve) => setTimeout(resolve, 900))
+    await new Promise(r => setTimeout(r, 900))
 
-    const googleUser: User = {
-      id: 'usr_g_' + Math.random().toString(36).substring(2, 9),
-      name: 'Sarah Connor',
-      email: 'sarah.connor@skyfleet.io',
-      company: 'Skyline Transit Operators',
-      avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80',
-      role: 'Enterprise Administrator',
-    }
+    const mockToken = 'google_oauth_token'
+    const googleUser: User = { ...MOCK_USER, name: 'Sarah Connor' }
 
-    const jwtToken = generateMockJWT(googleUser)
-
+    setToken(mockToken)
     setUser(googleUser)
-    setToken(jwtToken)
-
-    localStorage.setItem(AUTH_TOKEN_KEY, jwtToken)
-    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(googleUser))
+    localStorage.setItem(TOKEN_KEY, mockToken)
+    persistUser(googleUser)
 
     setIsLoading(false)
-    toast.success(`Signed in with Google as ${googleUser.email}`, 'Redirecting to your live dashboard.')
+    toast.success('Authenticated via Google', `Welcome, ${googleUser.name}!`)
     return true
   }
 
-  // Logout
+  /* ── Forgot password ───────────────────────────────────── */
+  const forgotPassword = async (email: string): Promise<boolean> => {
+    await new Promise(r => setTimeout(r, 600))
+    toast.info('Reset Link Sent', `Instructions sent to ${email}`)
+    return true
+  }
+
+  /* ── Set account type (called from onboarding) ─────────── */
+  const setAccountType = useCallback((type: AccountType) => {
+    setUser(prev => {
+      if (!prev) return prev
+      const updated: User = { ...prev, accountType: type, isFirstLogin: false }
+      if (localStorage.getItem(USER_KEY)) persistUser(updated, true)
+      else persistUser(updated, false)
+      return updated
+    })
+  }, [persistUser])
+
+  /* ── Complete company setup (business onboarding) ─────────── */
+  const completeCompanySetup = useCallback((data: CompanySetupData) => {
+    setUser(prev => {
+      if (!prev) return prev
+      const updated: User = {
+        ...prev,
+        company: data.companyName,
+        companySetupComplete: true,
+      }
+      if (localStorage.getItem(USER_KEY)) persistUser(updated, true)
+      else persistUser(updated, false)
+      return updated
+    })
+  }, [persistUser])
+
+  /* ── Logout ────────────────────────────────────────────── */
   const logout = () => {
-    localStorage.removeItem(AUTH_TOKEN_KEY)
-    localStorage.removeItem(AUTH_USER_KEY)
-    sessionStorage.removeItem(AUTH_TOKEN_KEY)
-    sessionStorage.removeItem(AUTH_USER_KEY)
     setUser(null)
     setToken(null)
-    toast.info('Logged Out', 'You have been safely logged out.')
-  }
-
-  // Forgot Password
-  const forgotPassword = async (email: string): Promise<boolean> => {
-    await new Promise((resolve) => setTimeout(resolve, 800))
-    toast.success('Password Reset Link Sent', `Instructions have been sent to ${email}.`)
-    return true
+    localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(USER_KEY)
+    sessionStorage.removeItem(TOKEN_KEY)
+    sessionStorage.removeItem(USER_KEY)
+    toast.info('Logged Out', 'You have been safely signed out.')
   }
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        token,
-        isAuthenticated: !!user && !!token,
-        isLoading,
-        login,
-        signup,
-        loginWithGoogle,
-        logout,
-        forgotPassword,
-      }}
-    >
+    <AuthContext.Provider value={{
+      user,
+      token,
+      isAuthenticated: !!token && !!user,
+      isLoading,
+      login,
+      signup,
+      loginWithGoogle,
+      forgotPassword,
+      logout,
+      setAccountType,
+      completeCompanySetup,
+    }}>
       {children}
     </AuthContext.Provider>
   )
 }
 
 export function useAuth() {
-  const context = useContext(AuthContext)
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider')
-  }
-  return context
+  const ctx = useContext(AuthContext)
+  if (!ctx) throw new Error('useAuth must be used within an AuthProvider')
+  return ctx
 }

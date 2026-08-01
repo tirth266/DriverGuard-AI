@@ -1,9 +1,9 @@
 import { memo } from 'react'
 import { motion } from 'framer-motion'
 import DashboardLayout from '../layouts/DashboardLayout'
-import LiveMonitoringCenter from '../components/dashboard/LiveMonitoringCenter'
+import BusinessDashboard from '../components/dashboard/BusinessDashboard'
 
-const MonitorPage = memo(function MonitorPage() {
+const FleetDashboardPage = memo(function FleetDashboardPage() {
   return (
     <DashboardLayout>
       <motion.div
@@ -12,10 +12,10 @@ const MonitorPage = memo(function MonitorPage() {
         exit={{ opacity: 0 }}
         transition={{ duration: 0.3 }}
       >
-        <LiveMonitoringCenter />
+        <BusinessDashboard />
       </motion.div>
     </DashboardLayout>
   )
 })
 
-export default MonitorPage
+export default FleetDashboardPage

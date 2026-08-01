@@ -6,7 +6,7 @@ const pageVariants = {
   initial: { opacity: 0 },
   in: { opacity: 1 },
   out: { opacity: 0 },
-}
+} as const
 
 const DashboardPage = memo(function DashboardPage() {
   return (

@@ -7,7 +7,6 @@ import Pipeline from '../components/home/Pipeline'
 import DetectionGrid from '../components/home/DetectionGrid'
 import KPISection from '../components/home/KPISection'
 import Industries from '../components/home/Industries'
-import Testimonials from '../components/home/Testimonials'
 import Pricing from '../components/home/Pricing'
 import FAQ from '../components/home/FAQ'
 import CTA from '../components/home/CTA'
@@ -22,7 +21,7 @@ const pageTransition = {
   type: 'tween',
   ease: 'easeInOut',
   duration: 0.35,
-}
+} as const
 
 const Home = memo(function Home() {
   return (
@@ -41,7 +40,6 @@ const Home = memo(function Home() {
       <DetectionGrid />
       <KPISection />
       <Industries />
-      <Testimonials />
       <Pricing />
       <FAQ />
       <CTA />

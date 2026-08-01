@@ -1,4 +1,5 @@
 import { memo } from 'react'
+import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { CheckCircle, XCircle, ShieldCheck } from 'lucide-react'
 import Button from '../shared/Button'
@@ -15,25 +16,6 @@ const STATUS_ITEMS = [
   { label: 'Eyes on Road', status: true },
 ]
 
-const fadeInLeft = {
-  hidden: { opacity: 0, x: -40 },
-  visible: { opacity: 1, x: 0, transition: { duration: 0.7, ease: 'easeOut' } },
-}
-
-const fadeInRight = {
-  hidden: { opacity: 0, x: 40 },
-  visible: { opacity: 1, x: 0, transition: { duration: 0.7, ease: 'easeOut', delay: 0.15 } },
-}
-
-const slideUp = {
-  hidden: { opacity: 0, y: 30 },
-  visible: (i: number) => ({
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.55, delay: i * 0.1, ease: 'easeOut' },
-  }),
-}
-
 const Hero = memo(function Hero() {
   return (
     <section
@@ -44,17 +26,16 @@ const Hero = memo(function Hero() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center w-full">
         {/* Left: Text content */}
         <motion.div
-          variants={fadeInLeft}
-          initial="hidden"
-          animate="visible"
+          initial={{ opacity: 0, x: -40 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.7 }}
           className="space-y-8"
         >
           {/* Live badge */}
           <motion.div
-            custom={0}
-            variants={slideUp}
-            initial="hidden"
-            animate="visible"
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55 }}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-card border border-border shadow-sm"
           >
             <span className="w-2 h-2 rounded-full bg-emerald-500 pulse-dot block" />
@@ -65,10 +46,9 @@ const Hero = memo(function Hero() {
 
           {/* Headline */}
           <motion.h1
-            custom={1}
-            variants={slideUp}
-            initial="hidden"
-            animate="visible"
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, delay: 0.1 }}
             className="font-display text-[40px] md:text-[54px] leading-[1.1] tracking-[-0.02em] font-extrabold text-on-surface"
           >
             Protect Every Journey <br />
@@ -77,10 +57,9 @@ const Hero = memo(function Hero() {
 
           {/* Description */}
           <motion.p
-            custom={2}
-            variants={slideUp}
-            initial="hidden"
-            animate="visible"
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, delay: 0.2 }}
             className="text-body-lg text-on-surface-variant max-w-lg leading-[1.7]"
           >
             DriverGuard AI helps fleets reduce accidents by detecting fatigue, phone usage,
@@ -90,30 +69,29 @@ const Hero = memo(function Hero() {
 
           {/* CTAs */}
           <motion.div
-            custom={3}
-            variants={slideUp}
-            initial="hidden"
-            animate="visible"
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, delay: 0.3 }}
             className="flex gap-4 flex-wrap"
           >
-            <a href="#contact">
-              <Button variant="primary" size="lg" aria-label="Book a live demo">
-                Book Live Demo
+            <Link to="/auth">
+              <Button variant="primary" size="lg" aria-label="Get started for free">
+                Get Started Free
               </Button>
-            </a>
-            <a href="#pricing">
-              <Button variant="secondary" size="lg" aria-label="Request pricing information">
-                Request Pricing
+            </Link>
+            <Link to="/enterprise">
+              <Button variant="secondary" size="lg" aria-label="View business fleet plans">
+                Business Plans
               </Button>
-            </a>
+            </Link>
           </motion.div>
         </motion.div>
 
         {/* Right: Hero image with floating cards */}
         <motion.div
-          variants={fadeInRight}
-          initial="hidden"
-          animate="visible"
+          initial={{ opacity: 0, x: 40 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.7, delay: 0.15 }}
           className="relative mt-8 md:mt-0"
         >
           <GlassCard className="rounded-2xl overflow-hidden border border-border shadow-md bg-card">
