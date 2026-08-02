@@ -8,19 +8,20 @@ import DashboardLayout from './layouts/DashboardLayout'
 import ProtectedRoute from './components/shared/ProtectedRoute'
 
 // Lazy-loaded pages
-const Home           = lazy(() => import('./pages/Home'))
-const AuthPage       = lazy(() => import('./pages/Auth'))
-const DashboardPage  = lazy(() => import('./pages/Dashboard'))
-const FleetDashboardPage = lazy(() => import('./pages/FleetDashboard'))
-const CompanySetupPage   = lazy(() => import('./pages/CompanySetup'))
-const AddDriverPage  = lazy(() => import('./pages/AddDriver'))
-const AddVehiclePage = lazy(() => import('./pages/AddVehicle'))
-const MonitorPage    = lazy(() => import('./pages/Monitor'))
-const ProfilePage    = lazy(() => import('./pages/Profile'))
-const SettingsPage   = lazy(() => import('./pages/Settings'))
-const OnboardingPage = lazy(() => import('./pages/Onboarding'))
-const EnterprisePage = lazy(() => import('./pages/Enterprise'))
-const NotFound       = lazy(() => import('./pages/NotFound'))
+const Home                   = lazy(() => import('./pages/Home'))
+const AuthPage               = lazy(() => import('./pages/Auth'))
+const WorkspaceSelectionPage = lazy(() => import('./pages/WorkspaceSelection'))
+const PersonalDashboard      = lazy(() => import('./pages/Dashboard'))
+const FleetDashboardPage     = lazy(() => import('./pages/FleetDashboard'))
+const CompanySetupPage       = lazy(() => import('./pages/CompanySetup'))
+const AddDriverPage          = lazy(() => import('./pages/AddDriver'))
+const AddVehiclePage         = lazy(() => import('./pages/AddVehicle'))
+const MonitorPage            = lazy(() => import('./pages/Monitor'))
+const RideSummaryPage        = lazy(() => import('./pages/RideSummary'))
+const ProfilePage            = lazy(() => import('./pages/Profile'))
+const SettingsPage           = lazy(() => import('./pages/Settings'))
+const EnterprisePage         = lazy(() => import('./pages/Enterprise'))
+const NotFound               = lazy(() => import('./pages/NotFound'))
 
 function LoadingFallback() {
   return (
@@ -35,30 +36,40 @@ function LoadingFallback() {
   )
 }
 
-/** Redirect already-authenticated users away from /auth */
-function AuthRouteGuard() {
+/** Redirects already-authenticated users away from /login, /register, /auth */
+function AuthRouteGuard({ defaultMode = 'signin' }: { defaultMode?: 'signin' | 'signup' }) {
   const { isAuthenticated, isLoading, user } = useAuth()
 
   if (isLoading) return <LoadingFallback />
 
-  if (isAuthenticated) {
-    if (user?.isFirstLogin && user?.accountType === null) {
-      return <Navigate to="/onboarding" replace />
+  if (isAuthenticated && user) {
+    if (!user.hasSelectedWorkspace) {
+      return <Navigate to="/select-workspace" replace />
     }
-    if (user?.accountType === 'business' && !user.companySetupComplete) {
-      return <Navigate to="/company-setup" replace />
-    }
-    if (user?.accountType === 'business') {
-      return <Navigate to="/fleet" replace />
-    }
-    return <Navigate to="/dashboard" replace />
+    const isBiz = user.role === 'business' || user.accountType === 'business'
+    const destination = isBiz ? '/business/dashboard' : '/personal/dashboard'
+    return <Navigate to={destination} replace />
   }
 
   return (
     <Suspense fallback={<LoadingFallback />}>
-      <AuthPage />
+      <AuthPage defaultMode={defaultMode} />
     </Suspense>
   )
+}
+
+/** Legacy route redirector based on authenticated role */
+function RoleRedirect({ subpath = 'dashboard' }: { subpath?: string }) {
+  const { user, isAuthenticated } = useAuth()
+  if (!isAuthenticated || !user) return <Navigate to="/login" replace />
+
+  if (!user.hasSelectedWorkspace) {
+    return <Navigate to="/select-workspace" replace />
+  }
+
+  const isBiz = user.role === 'business' || user.accountType === 'business'
+  const dest = isBiz ? `/business/${subpath}` : `/personal/${subpath}`
+  return <Navigate to={dest} replace />
 }
 
 function AnimatedRoutes() {
@@ -67,96 +78,141 @@ function AnimatedRoutes() {
   return (
     <AnimatePresence mode="wait">
       <Routes location={location} key={location.pathname}>
-        {/* Public Landing Page */}
+        {/* ── Public Landing Page ── */}
         <Route path="/" element={
           <MainLayout>
             <Suspense fallback={<LoadingFallback />}><Home /></Suspense>
           </MainLayout>
         } />
 
-        {/* Public Auth Page */}
-        <Route path="/auth" element={<AuthRouteGuard />} />
+        {/* ── Public Auth Routes (/login, /register, /auth) ── */}
+        <Route path="/login" element={<AuthRouteGuard defaultMode="signin" />} />
+        <Route path="/register" element={<AuthRouteGuard defaultMode="signup" />} />
+        <Route path="/auth" element={<AuthRouteGuard defaultMode="signin" />} />
 
-        {/* Onboarding */}
-        <Route path="/onboarding" element={
+        {/* ━━━ WORKSPACE SELECTION SCREEN ━━━━━━━━━━━━━━━━━━━━ */}
+        <Route path="/select-workspace" element={
           <ProtectedRoute>
-            <Suspense fallback={<LoadingFallback />}><OnboardingPage /></Suspense>
+            <Suspense fallback={<LoadingFallback />}><WorkspaceSelectionPage /></Suspense>
           </ProtectedRoute>
         } />
 
-        {/* Company Setup for Business */}
-        <Route path="/company-setup" element={
-          <ProtectedRoute businessOnly>
-            <Suspense fallback={<LoadingFallback />}><CompanySetupPage /></Suspense>
-          </ProtectedRoute>
-        } />
-
-        {/* Personal Dashboard */}
-        <Route path="/dashboard" element={
-          <ProtectedRoute>
+        {/* ━━━ PERSONAL USER ROUTES (/personal/*) ━━━━━━━━━━━━━━ */}
+        <Route path="/personal/dashboard" element={
+          <ProtectedRoute requiredRole="personal">
             <DashboardLayout>
-              <Suspense fallback={<LoadingFallback />}><DashboardPage /></Suspense>
+              <Suspense fallback={<LoadingFallback />}><PersonalDashboard /></Suspense>
             </DashboardLayout>
           </ProtectedRoute>
         } />
 
-        {/* Business Fleet Dashboard */}
-        <Route path="/fleet" element={
-          <ProtectedRoute businessOnly>
+        <Route path="/personal/monitoring" element={
+          <ProtectedRoute requiredRole="personal">
+            <Suspense fallback={<LoadingFallback />}><MonitorPage /></Suspense>
+          </ProtectedRoute>
+        } />
+
+        <Route path="/personal/ride-summary" element={
+          <ProtectedRoute requiredRole="personal">
+            <Suspense fallback={<LoadingFallback />}><RideSummaryPage /></Suspense>
+          </ProtectedRoute>
+        } />
+
+        <Route path="/personal/profile" element={
+          <ProtectedRoute requiredRole="personal">
+            <DashboardLayout>
+              <Suspense fallback={<LoadingFallback />}><ProfilePage /></Suspense>
+            </DashboardLayout>
+          </ProtectedRoute>
+        } />
+
+        <Route path="/personal/settings" element={
+          <ProtectedRoute requiredRole="personal">
+            <DashboardLayout>
+              <Suspense fallback={<LoadingFallback />}><SettingsPage /></Suspense>
+            </DashboardLayout>
+          </ProtectedRoute>
+        } />
+
+        {/* ━━━ BUSINESS USER ROUTES (/business/*) ━━━━━━━━━━━━━━ */}
+        <Route path="/business/dashboard" element={
+          <ProtectedRoute requiredRole="business">
             <Suspense fallback={<LoadingFallback />}><FleetDashboardPage /></Suspense>
           </ProtectedRoute>
         } />
 
-        {/* Drivers Redirect & Add */}
-        <Route path="/drivers" element={<Navigate to="/fleet" replace />} />
-        <Route path="/drivers/add" element={
-          <ProtectedRoute businessOnly>
+        <Route path="/business/drivers" element={
+          <ProtectedRoute requiredRole="business">
+            <Suspense fallback={<LoadingFallback />}><FleetDashboardPage /></Suspense>
+          </ProtectedRoute>
+        } />
+
+        <Route path="/business/drivers/add" element={
+          <ProtectedRoute requiredRole="business">
             <Suspense fallback={<LoadingFallback />}><AddDriverPage /></Suspense>
           </ProtectedRoute>
         } />
 
-        {/* Vehicles Redirect & Add */}
-        <Route path="/vehicles" element={<Navigate to="/fleet" replace />} />
-        <Route path="/vehicles/add" element={
-          <ProtectedRoute businessOnly>
+        <Route path="/business/vehicles/add" element={
+          <ProtectedRoute requiredRole="business">
             <Suspense fallback={<LoadingFallback />}><AddVehiclePage /></Suspense>
           </ProtectedRoute>
         } />
 
-        {/* Enterprise / Business Pricing */}
-        <Route path="/enterprise" element={
-          <ProtectedRoute>
+        <Route path="/business/monitoring" element={
+          <ProtectedRoute requiredRole="business">
+            <Suspense fallback={<LoadingFallback />}><MonitorPage /></Suspense>
+          </ProtectedRoute>
+        } />
+
+        <Route path="/business/ride-summary" element={
+          <ProtectedRoute requiredRole="business">
+            <Suspense fallback={<LoadingFallback />}><RideSummaryPage /></Suspense>
+          </ProtectedRoute>
+        } />
+
+        <Route path="/business/reports" element={
+          <ProtectedRoute requiredRole="business">
+            <Suspense fallback={<LoadingFallback />}><FleetDashboardPage /></Suspense>
+          </ProtectedRoute>
+        } />
+
+        <Route path="/business/company" element={
+          <ProtectedRoute requiredRole="business">
+            <Suspense fallback={<LoadingFallback />}><CompanySetupPage /></Suspense>
+          </ProtectedRoute>
+        } />
+
+        <Route path="/business/billing" element={
+          <ProtectedRoute requiredRole="business">
             <Suspense fallback={<LoadingFallback />}><EnterprisePage /></Suspense>
           </ProtectedRoute>
         } />
 
-        {/* Live Monitoring Center (/monitoring & /monitor) */}
-        <Route path="/monitoring" element={
-          <ProtectedRoute>
-            <Suspense fallback={<LoadingFallback />}><MonitorPage /></Suspense>
-          </ProtectedRoute>
-        } />
-        <Route path="/monitor" element={
-          <ProtectedRoute>
-            <Suspense fallback={<LoadingFallback />}><MonitorPage /></Suspense>
+        <Route path="/business/settings" element={
+          <ProtectedRoute requiredRole="business">
+            <DashboardLayout>
+              <Suspense fallback={<LoadingFallback />}><SettingsPage /></Suspense>
+            </DashboardLayout>
           </ProtectedRoute>
         } />
 
-        {/* Profile */}
-        <Route path="/profile" element={
+        {/* ── Legacy Backward-Compatibility Redirects ── */}
+        <Route path="/ride-summary" element={
           <ProtectedRoute>
-            <Suspense fallback={<LoadingFallback />}><ProfilePage /></Suspense>
+            <Suspense fallback={<LoadingFallback />}><RideSummaryPage /></Suspense>
           </ProtectedRoute>
         } />
+        <Route path="/dashboard" element={<RoleRedirect subpath="dashboard" />} />
+        <Route path="/monitoring" element={<RoleRedirect subpath="monitoring" />} />
+        <Route path="/fleet" element={<Navigate to="/business/dashboard" replace />} />
+        <Route path="/drivers" element={<Navigate to="/business/drivers" replace />} />
+        <Route path="/profile" element={<RoleRedirect subpath="profile" />} />
+        <Route path="/settings" element={<RoleRedirect subpath="settings" />} />
+        <Route path="/enterprise" element={<Navigate to="/business/billing" replace />} />
+        <Route path="/company-setup" element={<Navigate to="/business/company" replace />} />
 
-        {/* Settings */}
-        <Route path="/settings" element={
-          <ProtectedRoute>
-            <Suspense fallback={<LoadingFallback />}><SettingsPage /></Suspense>
-          </ProtectedRoute>
-        } />
-
-        {/* 404 */}
+        {/* ── 404 Not Found ── */}
         <Route path="*" element={
           <MainLayout>
             <Suspense fallback={<LoadingFallback />}><NotFound /></Suspense>

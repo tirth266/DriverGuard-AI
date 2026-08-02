@@ -18,8 +18,8 @@ import { useAuth } from '../context/AuthContext'
 import Button from '../components/shared/Button'
 import ThemeToggle from '../components/layout/ThemeToggle'
 
-export default function AuthPage() {
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin')
+export default function AuthPage({ defaultMode = 'signin' }: { defaultMode?: 'signin' | 'signup' }) {
+  const [mode, setMode] = useState<'signin' | 'signup'>(defaultMode)
   const [showForgotPassword, setShowForgotPassword] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)

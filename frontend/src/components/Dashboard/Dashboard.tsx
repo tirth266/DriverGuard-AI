@@ -99,14 +99,72 @@ const Dashboard = memo(function Dashboard() {
   // End Ride Action
   const handleConfirmEndRide = () => {
     setShowEndRideModal(false)
-    toast.success('Ride Ended Successfully', 'Live monitoring session saved.')
+    toast.success('Ride Ended Successfully', 'Redirecting to AI driving report...')
     const isBiz = user?.role === 'business' || user?.accountType === 'business'
-    const targetDashboard = isBiz ? '/business/dashboard' : '/personal/dashboard'
-    navigate(targetDashboard)
+    const targetSummary = isBiz ? '/business/ride-summary' : '/personal/ride-summary'
+    navigate(targetSummary, {
+      state: {
+        rideData: {
+          driverName: user?.name || 'Personal Driver',
+          vehicle: 'Tesla Model 3 #9021',
+          date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          startTime: '09:15 AM',
+          endTime: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+          duration: '1h 13m',
+          distance: '48.2 km',
+          avgSpeed: '52 km/h',
+          score: telemetry.score,
+          events: {
+            phoneUsage: { detected: telemetry.phoneDetected, duration: telemetry.phoneDetected ? '12 sec' : '0 sec', occurrences: telemetry.phoneDetected ? 1 : 0 },
+            texting: { detected: false, duration: '0 sec', occurrences: 0 },
+            drowsiness: { detected: telemetry.drowsiness > 15, duration: `${telemetry.drowsiness} sec`, occurrences: telemetry.drowsiness > 15 ? 1 : 0 },
+            smoking: { detected: false, duration: '0 sec', occurrences: 0 },
+            seatBelt: telemetry.seatbeltOk ? 'Always Worn (100% Compliant)' : 'Unbuckled during trip',
+            eyesOffRoad: { maxDuration: '2.4 sec', avgAttention: '97%' },
+            handsOnWheel: '95%',
+            yawning: { detected: false },
+          },
+          performance: {
+            focus: telemetry.eyesOnRoad ? 98 : 82,
+            safety: telemetry.score,
+            compliance: telemetry.seatbeltOk ? 100 : 70,
+            attention: telemetry.eyesOnRoad ? 97 : 80,
+            reaction: 93,
+          },
+          incidents: {
+            minor: telemetry.phoneDetected ? 1 : 0,
+            major: 0,
+            critical: 0,
+            nearMisses: 0,
+            safeDrivingPct: telemetry.score,
+          },
+          timeline: [
+            { time: '09:15 AM', label: 'Ride Started — Engine Ignition Verified', type: 'start' },
+            { time: '09:22 AM', label: 'Brief Phone Interaction Detected (12s)', type: 'warning' },
+            { time: '09:31 AM', label: 'Eyes Off Road Warning (2.4s)', type: 'warning' },
+            { time: '09:48 AM', label: 'AI Fatigue Scan Passed', type: 'success' },
+            { time: '10:05 AM', label: 'Safe Following Distance Maintained', type: 'success' },
+            { time: '10:15 AM', label: 'Optimal Driving Performance Restored', type: 'success' },
+            { time: '10:28 AM', label: 'Ride Completed & Telemetry Saved', type: 'end' },
+          ],
+          aiInsights: [
+            `Overall safety score: ${telemetry.score}/100.`,
+            telemetry.phoneDetected ? 'Phone interaction detected during monitoring.' : 'Zero mobile phone distraction detected.',
+            telemetry.seatbeltOk ? 'Seat belt remained securely fastened.' : 'Seat belt unbuckled warning triggered.',
+            'Fatigue and drowsiness level remained low.',
+          ],
+          recommendations: [
+            'Maintain strong forward eye gaze.',
+            'Keep both hands positioned on steering wheel.',
+            'Continue excellent safety compliance.',
+          ],
+        }
+      }
+    })
   }
 
   return (
-    <div className="w-full h-full max-h-full overflow-y-auto bg-background flex flex-col gap-0 transition-colors duration-300 p-4">
+    <div className="w-full h-full flex-1 max-h-full overflow-y-auto bg-background flex flex-col gap-0 transition-colors duration-300 p-4">
 
       {/* ── ALERT BANNER ──────────────────────────────────── */}
       <AnimatePresence>

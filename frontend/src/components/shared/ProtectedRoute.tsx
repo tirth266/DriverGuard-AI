@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 
 interface ProtectedRouteProps {
   children: ReactNode
-  /** Only allow business account type users */
+  requiredRole?: 'personal' | 'business' | string
   businessOnly?: boolean
 }
 
@@ -21,36 +21,28 @@ function Spinner() {
   )
 }
 
-export default function ProtectedRoute({ children, businessOnly = false }: ProtectedRouteProps) {
+export default function ProtectedRoute({ children, requiredRole, businessOnly = false }: ProtectedRouteProps) {
   const { isAuthenticated, isLoading, user } = useAuth()
   const location = useLocation()
-  const path = location.pathname
 
   if (isLoading) return <Spinner />
 
-  // Not logged in → /auth
-  if (!isAuthenticated) {
-    return <Navigate to="/auth" state={{ from: location }} replace />
+  if (!isAuthenticated || !user) {
+    return <Navigate to="/login" state={{ from: location }} replace />
   }
 
-  // First login and no account type selected → /onboarding (unless already there)
-  if (user && user.isFirstLogin && user.accountType === null && path !== '/onboarding') {
-    return <Navigate to="/onboarding" replace />
+  // Normalize role strictly to 'business' or 'personal' (defaults non-business to 'personal')
+  const isBusiness = user.role === 'business' || user.accountType === 'business'
+  const userRole: 'personal' | 'business' = isBusiness ? 'business' : 'personal'
+
+  // Route protection role check
+  if (requiredRole && userRole !== requiredRole) {
+    const target = userRole === 'business' ? '/business/dashboard' : '/personal/dashboard'
+    return <Navigate to={target} replace />
   }
 
-  // Business user who hasn't completed company setup → /company-setup
-  if (
-    user?.accountType === 'business' &&
-    !user.companySetupComplete &&
-    path !== '/company-setup' &&
-    path !== '/onboarding'
-  ) {
-    return <Navigate to="/company-setup" replace />
-  }
-
-  // Business-only route: personal users → /dashboard
-  if (businessOnly && user?.accountType !== 'business') {
-    return <Navigate to="/dashboard" replace />
+  if (businessOnly && userRole !== 'business') {
+    return <Navigate to="/personal/dashboard" replace />
   }
 
   return <>{children}</>

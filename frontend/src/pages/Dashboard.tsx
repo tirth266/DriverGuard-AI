@@ -16,6 +16,7 @@ const DashboardPage = memo(function DashboardPage() {
       exit="out"
       variants={pageVariants}
       transition={{ duration: 0.35 }}
+      className="w-full h-full flex-1 flex flex-col overflow-hidden"
     >
       <Dashboard />
     </motion.div>

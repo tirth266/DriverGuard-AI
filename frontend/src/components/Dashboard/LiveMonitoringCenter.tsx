@@ -202,10 +202,60 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
   // End Ride Confirmation Action
   const handleConfirmEndRide = () => {
     setShowEndRideModal(false)
-    toast.success('Ride Ended Successfully', 'Live monitoring session saved.')
+    toast.success('Ride Ended Successfully', 'Redirecting to AI driving report...')
     const isBiz = user?.role === 'business' || user?.accountType === 'business'
-    const targetDashboard = isBiz ? '/business/dashboard' : '/personal/dashboard'
-    navigate(targetDashboard)
+    const targetSummary = isBiz ? '/business/ride-summary' : '/personal/ride-summary'
+    navigate(targetSummary, {
+      state: {
+        rideData: {
+          driverName: activeDriver.name,
+          vehicle: activeDriver.vehicle,
+          date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+          startTime: '09:15 AM',
+          endTime: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+          duration: '1h 13m',
+          distance: '48.2 km',
+          avgSpeed: '52 km/h',
+          score: liveTelemetry.score,
+          events: {
+            phoneUsage: { detected: liveTelemetry.phoneDetected, duration: liveTelemetry.phoneDetected ? '12 sec' : '0 sec', occurrences: liveTelemetry.phoneDetected ? 1 : 0 },
+            texting: { detected: false, duration: '0 sec', occurrences: 0 },
+            drowsiness: { detected: liveTelemetry.drowsiness > 15, duration: `${liveTelemetry.drowsiness} sec`, occurrences: liveTelemetry.drowsiness > 15 ? 1 : 0 },
+            smoking: { detected: false, duration: '0 sec', occurrences: 0 },
+            seatBelt: liveTelemetry.seatbeltOk ? 'Always Worn (100% Compliant)' : 'Unbuckled during trip',
+            eyesOffRoad: { maxDuration: '2.4 sec', avgAttention: '97%' },
+            handsOnWheel: '95%',
+            yawning: { detected: false },
+          },
+          performance: {
+            focus: liveTelemetry.eyesOnRoad ? 98 : 82,
+            safety: liveTelemetry.score,
+            compliance: liveTelemetry.seatbeltOk ? 100 : 70,
+            attention: liveTelemetry.eyesOnRoad ? 97 : 80,
+            reaction: 93,
+          },
+          incidents: {
+            minor: liveTelemetry.phoneDetected ? 1 : 0,
+            major: 0,
+            critical: 0,
+            nearMisses: 0,
+            safeDrivingPct: liveTelemetry.score,
+          },
+          timeline: activeDriver.events.map(e => ({ time: e.time, label: e.label, type: e.dot.includes('rose') ? 'warning' : 'success' })),
+          aiInsights: [
+            `Overall safety score: ${liveTelemetry.score}/100.`,
+            liveTelemetry.phoneDetected ? 'Phone interaction detected during monitoring.' : 'Zero mobile phone distraction detected.',
+            liveTelemetry.seatbeltOk ? 'Seat belt remained securely fastened.' : 'Seat belt unbuckled warning triggered.',
+            'Fatigue and drowsiness level remained low.',
+          ],
+          recommendations: [
+            'Maintain strong forward eye gaze.',
+            'Keep both hands positioned on steering wheel.',
+            'Continue excellent safety compliance.',
+          ],
+        }
+      }
+    })
   }
 
   return (

@@ -15,6 +15,7 @@ export interface User {
   accountType: AccountType
   isFirstLogin: boolean
   companySetupComplete: boolean
+  hasSelectedWorkspace?: boolean
 }
 
 export interface CompanySetupData {
@@ -61,7 +62,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const storedUser  = localStorage.getItem(USER_KEY)  || sessionStorage.getItem(USER_KEY)
       if (storedToken && storedUser) {
         setToken(storedToken)
-        setUser(JSON.parse(storedUser))
+        const parsed = JSON.parse(storedUser)
+        const roleType: AccountType = parsed.role === 'business' || parsed.accountType === 'business' ? 'business' : 'personal'
+        setUser({
+          ...parsed,
+          role: roleType,
+          accountType: roleType,
+        })
       }
     } catch {
       localStorage.removeItem(TOKEN_KEY)
