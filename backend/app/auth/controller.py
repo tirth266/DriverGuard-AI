@@ -94,9 +94,8 @@ class AuthController:
                 error_msg = quote(f"Google login cancelled or denied: {error_reason}")
                 return redirect(f"{frontend_url}/auth?error={error_msg}")
 
-            # Obtain token and userinfo from Google via Authlib with explicit redirect_uri
-            redirect_uri = current_app.config['GOOGLE_CALLBACK_URL']
-            token_data = oauth.google.authorize_access_token(redirect_uri=redirect_uri)
+            # Obtain token and userinfo from Google via Authlib
+            token_data = oauth.google.authorize_access_token()
             userinfo = token_data.get('userinfo')
 
             if not userinfo:

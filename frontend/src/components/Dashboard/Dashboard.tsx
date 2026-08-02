@@ -92,7 +92,7 @@ const Dashboard = memo(function Dashboard() {
   const handleSnapshot = () => toast.success('Snapshot Saved', 'Live webcam frame saved to incident log.')
 
   return (
-    <div className="w-full min-h-[calc(100vh-56px)] bg-background flex flex-col gap-0 transition-colors duration-300">
+    <div className="w-full h-full max-h-full overflow-y-auto bg-background flex flex-col gap-0 transition-colors duration-300 p-4">
 
       {/* ── ALERT BANNER ──────────────────────────────────── */}
       <AnimatePresence>

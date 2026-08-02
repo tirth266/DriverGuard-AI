@@ -37,147 +37,58 @@
     box-sizing: border-box;
   }
 
-  html {
-    background-color: var(--background) !important;
-    color: var(--text) !important;
-    scroll-behavior: smooth;
-  }
-
-  body {
+  /* Prevent browser-level double scrollbars */
+  html, body, #root {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    margin: 0;
+    padding: 0;
     background-color: var(--background) !important;
     color: var(--text) !important;
     font-family: 'Inter', sans-serif;
-    overflow-x: hidden;
     transition: background-color 300ms ease, color 300ms ease;
   }
 
-  #root {
-    background-color: var(--background) !important;
-    color: var(--text) !important;
-    transition: background-color 300ms ease, color 300ms ease;
-  }
-
+  /* Thin, clean custom scrollbars for inner containers */
   ::-webkit-scrollbar {
-    width: 6px;
+    width: 5px;
+    height: 5px;
   }
 
   ::-webkit-scrollbar-track {
-    background-color: var(--surface);
+    background: transparent;
   }
 
   ::-webkit-scrollbar-thumb {
-    background-color: var(--border);
+    background: var(--border);
     border-radius: 9999px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background-color: var(--muted);
-  }
-
-  /* Anchor scroll offset for sticky nav */
-  [id] {
-    scroll-margin-top: 96px;
+    background: var(--muted);
   }
 }
 
-@layer components {
-  .bg-background {
-    background-color: var(--background) !important;
-  }
-
-  .bg-surface {
-    background-color: var(--surface) !important;
-  }
-
-  .bg-card {
-    background-color: var(--card) !important;
-  }
-
-  .text-on-surface {
-    color: var(--text) !important;
-  }
-
-  .text-on-surface-variant {
-    color: var(--muted) !important;
-  }
-
-  .border-border {
-    border-color: var(--border) !important;
-  }
-
-  .glass-card {
-    background-color: var(--card) !important;
-    border: 1px solid var(--border) !important;
-    box-shadow: var(--shadow-card);
-    transition: background-color 300ms ease, border-color 300ms ease, box-shadow 300ms ease, transform 350ms cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  .glass-header {
-    background-color: var(--header-bg) !important;
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-color: var(--border) !important;
-    transition: background-color 300ms ease, border-color 300ms ease;
-  }
-
-  .glass-card-hover {
-    background-color: var(--card) !important;
-    border: 1px solid var(--border) !important;
-    box-shadow: var(--shadow-card);
-    transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  .glass-card-hover:hover {
-    transform: translateY(-6px);
-    border-color: var(--primary) !important;
-    box-shadow: var(--shadow-hover);
-  }
-
-  .text-gradient-primary {
-    background: linear-gradient(135deg, #2563eb, #3b82f6);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-  }
-
-  .dark .text-gradient-primary {
-    background: linear-gradient(135deg, #3b82f6, #60a5fa);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-  }
-
-  /* Pricing highlight card */
-  .pricing-highlight {
-    background-color: var(--card) !important;
-    border: 2px solid #2563eb !important;
-    position: relative;
-    box-shadow: var(--shadow-hover);
-  }
+/* Glassmorphism utilities */
+.glass-panel {
+  background: var(--card);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
 }
 
-@layer utilities {
-  .pulse-dot {
-    animation: pulse-dot 2s infinite ease-in-out;
-  }
+.pulse-dot {
+  animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-@keyframes pulse-dot {
-  0% {
-    transform: scale(0.9);
-    opacity: 0.7;
+@keyframes pulse-ring {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
   }
   50% {
-    transform: scale(1.1);
-    opacity: 1;
+    opacity: 0.4;
+    transform: scale(1.2);
   }
-  100% {
-    transform: scale(0.9);
-    opacity: 0.7;
-  }
-}
-
-/* Page transition wrapper */
-.page-wrapper {
-  min-height: 100vh;
 }

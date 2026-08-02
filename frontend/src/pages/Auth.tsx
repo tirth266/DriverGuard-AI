@@ -187,7 +187,7 @@ export default function AuthPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-background via-surface/40 to-background text-on-surface flex flex-col justify-between transition-colors duration-300 relative overflow-hidden">
+    <div className="w-screen h-screen max-h-screen overflow-y-auto bg-gradient-to-b from-background via-surface/40 to-background text-on-surface flex flex-col justify-between transition-colors duration-300 relative">
       
       {/* Background Subtle Radial Ambient Glows */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden="true">

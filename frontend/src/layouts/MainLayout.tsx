@@ -8,7 +8,7 @@ interface MainLayoutProps {
 
 export default function MainLayout({ children }: MainLayoutProps) {
   return (
-    <div className="flex flex-col min-h-screen bg-background text-on-surface transition-colors duration-300">
+    <div className="flex flex-col w-screen h-screen max-h-screen overflow-y-auto bg-background text-on-surface transition-colors duration-300">
       <Navbar />
       <main className="flex-1 pt-20" role="main">
         {children}

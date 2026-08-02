@@ -10,12 +10,10 @@ import {
   Building2,
   Zap,
   CheckCircle2,
-  ArrowRight,
 } from 'lucide-react'
 import { useToast } from '../context/ToastContext'
 import { useAuth, type AccountType } from '../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
-import MainLayout from '../layouts/MainLayout'
 import Button from '../components/shared/Button'
 
 const SettingsPage = memo(function SettingsPage() {
@@ -42,191 +40,166 @@ const SettingsPage = memo(function SettingsPage() {
         : 'Dashboard set to Personal mode.'
     )
     if (type === 'business') {
-      setTimeout(() => navigate('/enterprise'), 800)
+      setTimeout(() => navigate('/business/billing'), 800)
     }
   }
 
   return (
-    <MainLayout>
-      <div className="min-h-screen bg-background text-on-surface pt-24 pb-16 px-4 md:px-12 max-w-[1000px] mx-auto transition-colors duration-300">
-        <motion.div
-          initial={{ opacity: 0, y: 15 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-          className="space-y-8"
-        >
-          {/* Page title */}
-          <div>
-            <h1 className="font-display text-3xl font-extrabold tracking-tight flex items-center gap-3">
-              <Settings className="text-primary" size={28} /> Settings
-            </h1>
-            <p className="text-sm text-on-surface-variant mt-1">
-              Manage your account, AI preferences and notification settings.
-            </p>
+    <div className="w-full h-full max-h-full overflow-y-auto p-4 md:p-8 max-w-[1000px] mx-auto text-on-surface transition-colors duration-300">
+      <motion.div
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+        className="space-y-8"
+      >
+        {/* Page title */}
+        <div>
+          <h1 className="font-display text-3xl font-extrabold tracking-tight flex items-center gap-3">
+            <Settings className="text-primary" size={32} /> Settings & Preferences
+          </h1>
+          <p className="text-sm text-on-surface-variant mt-1">
+            Customize AI detection sensitivity, notifications, and your workspace type.
+          </p>
+        </div>
+
+        {/* Account Mode Switcher Card */}
+        <div className="bg-card border border-border rounded-2xl p-6 shadow-md space-y-4">
+          <div className="flex items-center justify-between border-b border-border pb-3">
+            <div className="flex items-center gap-2.5">
+              <Zap className="text-primary" size={20} />
+              <h2 className="text-base font-extrabold text-on-surface">Workspace Account Mode</h2>
+            </div>
+            <span className="text-xs px-3 py-1 rounded-full bg-primary/10 text-primary font-bold border border-primary/20 uppercase tracking-wider">
+              Current: {currentType === 'business' ? 'Business Admin' : 'Personal Driver'}
+            </span>
           </div>
 
-          {/* ── Account Type ───────────────────────────────── */}
-          <div className="bg-card border border-border rounded-2xl p-6 shadow-sm space-y-5">
-            <div>
-              <h2 className="text-base font-bold text-on-surface flex items-center gap-2 mb-1">
-                <User size={18} className="text-primary" /> Account Type
-              </h2>
-              <p className="text-xs text-on-surface-variant">
-                Change how you use DriverGuard AI. You can switch between Personal and Business at any time.
-              </p>
-            </div>
+          <p className="text-xs text-on-surface-variant leading-relaxed">
+            Switch between individual personal monitoring mode and fleet business administration mode.
+          </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Personal */}
-              <button
-                onClick={() => handleSwitchType('personal')}
-                className={`relative text-left p-5 rounded-2xl border-2 transition-all hover:shadow-lg ${
-                  currentType === 'personal'
-                    ? 'border-emerald-500 bg-emerald-500/5'
-                    : 'border-border bg-surface hover:border-emerald-500/50'
-                }`}
-              >
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+            {/* Personal Mode Option */}
+            <button
+              type="button"
+              onClick={() => handleSwitchType('personal')}
+              className={`p-4 rounded-xl border text-left transition-all ${
+                currentType === 'personal'
+                  ? 'bg-primary/10 border-primary ring-1 ring-primary'
+                  : 'bg-surface hover:bg-card border-border'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="flex items-center gap-2 font-bold text-sm text-on-surface">
+                  <User size={18} className="text-emerald-500" /> Personal Driver
+                </span>
                 {currentType === 'personal' && (
-                  <span className="absolute top-3 right-3 flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                    <CheckCircle2 size={13} /> Current
-                  </span>
+                  <CheckCircle2 size={18} className="text-primary" />
                 )}
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="h-9 w-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-                    <User size={17} className="text-emerald-600 dark:text-emerald-400" />
-                  </div>
-                  <div>
-                    <p className="font-bold text-sm text-on-surface">Personal Driver</p>
-                    <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">FREE</span>
-                  </div>
-                </div>
-                <p className="text-xs text-on-surface-variant leading-relaxed">
-                  AI monitoring for yourself. Ideal for individuals and personal vehicles.
-                </p>
-              </button>
+              </div>
+              <p className="text-xs text-on-surface-variant">
+                Single-driver AI safety monitoring and personal analytics.
+              </p>
+            </button>
 
-              {/* Business */}
-              <button
-                onClick={() => handleSwitchType('business')}
-                className={`relative text-left p-5 rounded-2xl border-2 transition-all hover:shadow-lg ${
-                  currentType === 'business'
-                    ? 'border-primary bg-primary/5'
-                    : 'border-border bg-surface hover:border-primary/50'
-                }`}
-              >
+            {/* Business Mode Option */}
+            <button
+              type="button"
+              onClick={() => handleSwitchType('business')}
+              className={`p-4 rounded-xl border text-left transition-all ${
+                currentType === 'business'
+                  ? 'bg-primary/10 border-primary ring-1 ring-primary'
+                  : 'bg-surface hover:bg-card border-border'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="flex items-center gap-2 font-bold text-sm text-on-surface">
+                  <Building2 size={18} className="text-primary" /> Business Admin
+                </span>
                 {currentType === 'business' && (
-                  <span className="absolute top-3 right-3 flex items-center gap-1 text-[10px] font-bold text-primary">
-                    <CheckCircle2 size={13} /> Current
-                  </span>
+                  <CheckCircle2 size={18} className="text-primary" />
                 )}
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="h-9 w-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-                    <Building2 size={17} className="text-primary" />
-                  </div>
-                  <div>
-                    <p className="font-bold text-sm text-on-surface">Business / Fleet</p>
-                    <span className="text-[10px] font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20">PREMIUM</span>
-                  </div>
+              </div>
+              <p className="text-xs text-on-surface-variant">
+                Multi-driver fleet management, vehicle tracking, and reports.
+              </p>
+            </button>
+          </div>
+        </div>
+
+        {/* AI Detection Sensitivity */}
+        <div className="bg-card border border-border rounded-2xl p-6 shadow-md space-y-6">
+          <h2 className="text-lg font-bold text-on-surface border-b border-border pb-4 flex items-center gap-2">
+            <Shield className="text-primary" size={20} /> AI Safety Detection Sensitivity
+          </h2>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-2">
+                Fatigue & Drowsiness Threshold
+              </label>
+              <select
+                value={drowsinessSensitivity}
+                onChange={e => setDrowsinessSensitivity(e.target.value)}
+                className="w-full md:w-72 px-4 py-2.5 rounded-xl border border-border bg-surface text-on-surface text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/50"
+              >
+                <option value="Low">Low (Permissive)</option>
+                <option value="Medium">Medium (Balanced)</option>
+                <option value="High">High (Recommended for long hauls)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Notifications & Audio */}
+        <div className="bg-card border border-border rounded-2xl p-6 shadow-md space-y-6">
+          <h2 className="text-lg font-bold text-on-surface border-b border-border pb-4 flex items-center gap-2">
+            <Bell className="text-primary" size={20} /> Alerts & Sound
+          </h2>
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Volume2 className="text-on-surface-variant" size={20} />
+                <div>
+                  <p className="text-sm font-semibold text-on-surface">Voice & Audio Alerts</p>
+                  <p className="text-xs text-on-surface-variant">Play audio tone during active safety warnings.</p>
                 </div>
-                <p className="text-xs text-on-surface-variant leading-relaxed">
-                  Manage multiple drivers and vehicles. For companies and fleets.
-                </p>
-              </button>
+              </div>
+              <input
+                type="checkbox"
+                checked={voiceAlerts}
+                onChange={e => setVoiceAlerts(e.target.checked)}
+                className="w-5 h-5 accent-primary rounded cursor-pointer"
+              />
             </div>
 
-            {/* Current plan and upgrade CTA */}
-            <div className="p-4 rounded-xl bg-surface border border-border flex items-center justify-between gap-4 flex-wrap">
-              <div>
-                <p className="text-xs font-bold text-on-surface mb-0.5">Current Plan</p>
-                <p className="text-sm font-semibold text-on-surface-variant">
-                  {currentType === 'personal' ? '✅ Personal — Free Forever' : currentType === 'business' ? '🏢 Business — Premium' : '⚠️ Not set — Complete onboarding'}
-                </p>
+            <div className="flex items-center justify-between border-t border-border pt-4">
+              <div className="flex items-center gap-3">
+                <Bell className="text-on-surface-variant" size={20} />
+                <div>
+                  <p className="text-sm font-semibold text-on-surface">Email Safety Digests</p>
+                  <p className="text-xs text-on-surface-variant">Receive weekly summary reports of safety events.</p>
+                </div>
               </div>
-              {currentType === 'personal' && (
-                <button
-                  onClick={() => navigate('/enterprise')}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:opacity-90 transition-opacity"
-                >
-                  <Zap size={13} /> Upgrade to Business <ArrowRight size={13} />
-                </button>
-              )}
-              {!currentType && (
-                <button
-                  onClick={() => navigate('/onboarding')}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:opacity-90 transition-opacity"
-                >
-                  Complete Setup <ArrowRight size={13} />
-                </button>
-              )}
+              <input
+                type="checkbox"
+                checked={emailDigest}
+                onChange={e => setEmailDigest(e.target.checked)}
+                className="w-5 h-5 accent-primary rounded cursor-pointer"
+              />
             </div>
           </div>
+        </div>
 
-          {/* ── AI Settings ─────────────────────────────────── */}
-          <div className="bg-card border border-border rounded-2xl p-6 shadow-sm space-y-6">
-            {/* Sensitivity */}
-            <div className="space-y-4 border-b border-border pb-6">
-              <h2 className="text-base font-bold text-on-surface flex items-center gap-2">
-                <Shield size={18} className="text-primary" /> AI Detection Sensitivity
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {['Low', 'Medium', 'High'].map((level) => (
-                  <button
-                    key={level}
-                    onClick={() => setDrowsinessSensitivity(level)}
-                    className={`py-2.5 px-4 rounded-xl border text-xs font-semibold transition-all ${
-                      drowsinessSensitivity === level
-                        ? 'bg-primary text-white border-primary shadow-sm'
-                        : 'bg-surface text-on-surface-variant border-border hover:bg-card'
-                    }`}
-                  >
-                    {level} Sensitivity
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Voice Alerts */}
-            <div className="space-y-4 border-b border-border pb-6">
-              <h2 className="text-base font-bold text-on-surface flex items-center gap-2">
-                <Volume2 size={18} className="text-primary" /> In-Cabin Voice Alerts
-              </h2>
-              <label className="flex items-center justify-between cursor-pointer p-3 rounded-xl bg-surface border border-border">
-                <span className="text-xs font-medium text-on-surface">Enable spoken voice alerts to driver</span>
-                <input
-                  type="checkbox"
-                  checked={voiceAlerts}
-                  onChange={(e) => setVoiceAlerts(e.target.checked)}
-                  className="rounded border-border text-primary focus:ring-primary h-4 w-4"
-                />
-              </label>
-            </div>
-
-            {/* Email Digest */}
-            <div className="space-y-4">
-              <h2 className="text-base font-bold text-on-surface flex items-center gap-2">
-                <Bell size={18} className="text-primary" /> Email Notifications
-              </h2>
-              <label className="flex items-center justify-between cursor-pointer p-3 rounded-xl bg-surface border border-border">
-                <span className="text-xs font-medium text-on-surface">Send daily safety summary report</span>
-                <input
-                  type="checkbox"
-                  checked={emailDigest}
-                  onChange={(e) => setEmailDigest(e.target.checked)}
-                  className="rounded border-border text-primary focus:ring-primary h-4 w-4"
-                />
-              </label>
-            </div>
-
-            {/* Save */}
-            <div className="pt-2">
-              <Button variant="primary" size="md" onClick={handleSave} className="flex items-center gap-2">
-                <Save size={16} /> Save Preferences
-              </Button>
-            </div>
-          </div>
-        </motion.div>
-      </div>
-    </MainLayout>
+        {/* Save Button */}
+        <div className="flex justify-end pt-4">
+          <Button variant="primary" size="md" onClick={handleSave} className="flex items-center gap-2">
+            <Save size={16} /> Save Settings
+          </Button>
+        </div>
+      </motion.div>
+    </div>
   )
 })
 
