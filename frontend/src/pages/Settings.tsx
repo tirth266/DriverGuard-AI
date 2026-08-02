@@ -21,7 +21,7 @@ const SettingsPage = memo(function SettingsPage() {
   const [voiceAlerts, setVoiceAlerts] = useState(true)
   const [emailDigest, setEmailDigest] = useState(true)
   const toast = useToast()
-  const { user, setAccountType } = useAuth()
+  const { user, setAccountType, switchWorkspace } = useAuth()
   const navigate = useNavigate()
 
   const currentType = user?.accountType ?? null
@@ -123,6 +123,20 @@ const SettingsPage = memo(function SettingsPage() {
               <p className="text-xs text-on-surface-variant">
                 Multi-driver fleet management, vehicle tracking, and reports.
               </p>
+            </button>
+          </div>
+
+          <div className="pt-2 border-t border-border flex justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                switchWorkspace()
+                toast.info('Workspace Reset', 'Redirecting to workspace selection screen...')
+                navigate('/select-workspace')
+              }}
+              className="text-xs text-on-surface-variant hover:text-primary underline font-medium"
+            >
+              Reset Workspace Selection Screen
             </button>
           </div>
         </div>

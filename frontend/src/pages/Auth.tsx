@@ -144,7 +144,17 @@ export default function AuthPage({ defaultMode = 'signin' }: { defaultMode?: 'si
 
     const success = await login(signInData.email, signInData.password, signInData.rememberMe)
     if (success) {
-      navigate(from, { replace: true })
+      const savedPref = localStorage.getItem('driverguard_account_type') || localStorage.getItem('driverguard_workspace_selected')
+      const isSelected = localStorage.getItem('workspace_selected') === 'true' || !!savedPref
+
+      if (isSelected && (savedPref === 'personal' || savedPref === 'business')) {
+        const target = savedPref === 'business' ? '/business/dashboard' : '/personal/dashboard'
+        navigate(target, { replace: true })
+      } else if (from && from !== '/' && from !== '/login' && from !== '/register') {
+        navigate(from, { replace: true })
+      } else {
+        navigate('/select-workspace', { replace: true })
+      }
     }
   }
 
