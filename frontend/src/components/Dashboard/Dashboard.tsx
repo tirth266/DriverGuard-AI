@@ -1,7 +1,7 @@
 import { memo, useState, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Shield,
   Radio,
   Camera,
   Maximize2,
@@ -11,7 +11,9 @@ import {
   Eye,
   Smartphone,
   ShieldAlert,
+  StopCircle,
 } from 'lucide-react'
+import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import WebcamFeed from './WebcamFeed'
 
@@ -61,6 +63,7 @@ const Dashboard = memo(function Dashboard() {
   const [cameraFull, setCameraFull] = useState(false)
   const [isRecording, setIsRecording] = useState(true)
   const [activeAlert, setActiveAlert] = useState<string | null>(null)
+  const [showEndRideModal, setShowEndRideModal] = useState(false)
   
   // Real-time telemetry state updated by live OpenCV camera feed
   const [telemetry, setTelemetry] = useState({
@@ -72,7 +75,9 @@ const Dashboard = memo(function Dashboard() {
     faceDetected: true,
   })
 
+  const { user } = useAuth()
   const toast = useToast()
+  const navigate = useNavigate()
 
   const handleTelemetryUpdate = useCallback((newTelemetry: any) => {
     setTelemetry(prev => ({ ...prev, ...newTelemetry }))
@@ -91,6 +96,15 @@ const Dashboard = memo(function Dashboard() {
 
   const handleSnapshot = () => toast.success('Snapshot Saved', 'Live webcam frame saved to incident log.')
 
+  // End Ride Action
+  const handleConfirmEndRide = () => {
+    setShowEndRideModal(false)
+    toast.success('Ride Ended Successfully', 'Live monitoring session saved.')
+    const isBiz = user?.role === 'business' || user?.accountType === 'business'
+    const targetDashboard = isBiz ? '/business/dashboard' : '/personal/dashboard'
+    navigate(targetDashboard)
+  }
+
   return (
     <div className="w-full h-full max-h-full overflow-y-auto bg-background flex flex-col gap-0 transition-colors duration-300 p-4">
 
@@ -108,48 +122,61 @@ const Dashboard = memo(function Dashboard() {
               {activeAlert}
             </div>
             <button onClick={() => setActiveAlert(null)}
-              className="text-white/80 hover:text-white text-xs underline font-bold ml-4 flex-shrink-0">
+              className="text-white/80 hover:text-white text-xs font-bold underline ml-4">
               Dismiss
             </button>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ── MAIN GRID: Camera 80% | Safety Panel 20% ─────── */}
-      <div className="flex-1 flex flex-col lg:flex-row gap-4 p-4">
+      {/* ── MAIN DASHBOARD GRID ───────────────────────────── */}
+      <div className="p-4 md:p-6 flex flex-col lg:flex-row gap-6">
 
         {/* ━━━ LEFT: LARGE CAMERA FEED ━━━━━━━━━━━━━━━━━━━━━ */}
         <div className="flex-1 lg:w-[80%] flex flex-col gap-4 min-w-0">
           <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-xl flex flex-col h-full transition-colors">
 
-            {/* Camera toolbar */}
-            <div className="px-4 py-3 bg-surface border-b border-border flex items-center justify-between gap-3 flex-wrap flex-shrink-0">
-              <div className="flex items-center gap-3">
-                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/20 text-[11px]">
+            {/* Camera toolbar: REC | Snapshot | Expand | End Ride */}
+            <div className="px-4 py-3 bg-surface border-b border-border flex items-center justify-between gap-3 overflow-visible flex-nowrap flex-shrink-0">
+              <div className="flex items-center gap-3 flex-shrink min-w-0">
+                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/20 text-[11px] flex-shrink-0">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 pulse-dot" /> LIVE 1080P
                 </span>
-                <span className="text-xs font-mono text-on-surface-variant font-medium hidden sm:block">
+                <span className="text-xs font-mono text-on-surface-variant font-medium hidden sm:block truncate">
                   WEBCAM CAM-01 • CABIN INFRARED
                 </span>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-nowrap overflow-visible flex-shrink-0">
+                {/* REC Button */}
                 <button onClick={() => setIsRecording(r => !r)}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold transition-colors ${isRecording ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' : 'bg-surface text-on-surface-variant border-border'}`}>
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold transition-colors flex-shrink-0 ${isRecording ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' : 'bg-surface text-on-surface-variant border-border'}`}>
                   <span className={`w-2 h-2 rounded-full ${isRecording ? 'bg-rose-500 animate-ping' : 'bg-gray-400'}`} />
                   {isRecording ? 'REC' : 'PAUSED'}
                 </button>
 
+                {/* Snapshot Button */}
                 <button onClick={handleSnapshot}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface hover:bg-card border border-border text-on-surface-variant hover:text-on-surface transition-colors text-xs font-medium">
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface hover:bg-card border border-border text-on-surface-variant hover:text-on-surface transition-colors text-xs font-medium flex-shrink-0">
                   <Camera size={13} />
                   <span className="hidden sm:inline">Snapshot</span>
                 </button>
 
+                {/* Expand Button */}
                 <button onClick={() => setCameraFull(true)}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary text-white hover:opacity-90 transition-opacity text-xs font-medium">
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary text-white hover:opacity-90 transition-opacity text-xs font-medium flex-shrink-0">
                   <Maximize2 size={13} />
                   <span className="hidden sm:inline">Expand</span>
+                </button>
+
+                {/* STEP 7: END RIDE BUTTON */}
+                <button
+                  onClick={() => setShowEndRideModal(true)}
+                  className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-4 py-1.5 flex-shrink-0 whitespace-nowrap z-50 flex items-center gap-1.5 text-xs font-bold shadow-md hover:shadow-red-600/20 transition-all cursor-pointer"
+                  title="End current ride session"
+                >
+                  <StopCircle size={14} />
+                  <span>End Ride</span>
                 </button>
               </div>
             </div>
@@ -158,7 +185,7 @@ const Dashboard = memo(function Dashboard() {
             <WebcamFeed
               isRecording={isRecording}
               onTelemetryUpdate={handleTelemetryUpdate}
-              className="flex-1"
+              className="flex-1 min-h-[360px]"
             />
 
             {/* Status bar */}
@@ -172,108 +199,147 @@ const Dashboard = memo(function Dashboard() {
           </div>
         </div>
 
-        {/* ━━━ RIGHT: SAFETY PANEL 20% ━━━━━━━━━━━━━━━━━━━━━ */}
-        <div className="w-full lg:w-[20%] lg:min-w-[220px] lg:max-w-[280px] flex flex-col gap-4">
-
-          {/* Driver Status Badge */}
-          <div className="bg-card border border-border rounded-2xl p-4 shadow-lg transition-colors">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Driver Status</span>
-              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-extrabold text-[10px] border border-emerald-500/20">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 pulse-dot" /> SAFE
-              </span>
+        {/* ━━━ RIGHT: TELEMETRY & EVENTS ━━━━━━━━━━━━━━━━━━━ */}
+        <div className="w-full lg:w-80 flex flex-col gap-5 flex-shrink-0">
+          
+          {/* Safety Score Card */}
+          <div className="bg-card border border-border rounded-2xl p-5 shadow-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">Driver Safety Score</span>
+              <span className="text-[11px] text-emerald-500 bg-emerald-500/10 px-2.5 py-0.5 rounded-full font-semibold border border-emerald-500/20">LIVE</span>
             </div>
 
-            {/* Gauge */}
-            <div className="flex items-center gap-3 mb-4 p-3 rounded-xl bg-surface border border-border">
-              <div className="relative flex-shrink-0">
+            <div className="flex items-center gap-4">
+              <div className="relative">
                 <CircularGauge value={telemetry.score} size={80} />
                 <div className="absolute inset-0 flex items-center justify-center rotate-[90deg]">
-                  <span className="text-sm font-extrabold text-primary">{telemetry.score}%</span>
+                  <span className="text-lg font-extrabold text-on-surface font-mono">{telemetry.score}</span>
                 </div>
               </div>
               <div>
-                <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider block mb-0.5">Safety Score</span>
-                <span className="text-xl font-extrabold text-on-surface font-mono">{telemetry.score}<span className="text-sm text-primary font-medium">/100</span></span>
-                <p className="text-[10px] text-emerald-500 font-semibold mt-0.5">
-                  {telemetry.score >= 90 ? 'High Compliance' : 'Review Advised'}
+                <p className="text-xl font-extrabold text-on-surface tracking-tight">
+                  {telemetry.score >= 90 ? 'Excellent' : telemetry.score >= 80 ? 'Good' : 'Needs Care'}
                 </p>
+                <p className="text-xs text-on-surface-variant mt-0.5">Top 5% safest driver</p>
               </div>
             </div>
+          </div>
 
-            {/* Compliance checklist */}
-            <div className="space-y-0">
-              <StatusRow label="Seat Belt" ok={telemetry.seatbeltOk} note={telemetry.seatbeltOk ? 'COMPLIANT' : 'UNBUCKLED'} />
-              <StatusRow label="Phone Usage" ok={!telemetry.phoneDetected} note={!telemetry.phoneDetected ? 'NONE' : 'DETECTED'} />
-              <StatusRow label="Smoking" ok={true} note="NONE" />
-              <div className="py-2 border-b border-border">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs text-on-surface-variant font-medium">Drowsiness</span>
-                  <span className="text-xs font-bold text-emerald-500">LOW {telemetry.drowsiness}%</span>
-                </div>
-                <div className="w-full h-1.5 bg-background rounded-full overflow-hidden">
-                  <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${telemetry.drowsiness}%` }} />
-                </div>
-              </div>
-              <StatusRow label="Eyes on Road" ok={telemetry.eyesOnRoad} note={telemetry.eyesOnRoad ? 'FOCUSED' : 'DISTRACTED'} />
-              <StatusRow label="Hands on Wheel" ok={true} note="BOTH" />
+          {/* Realtime AI Detection Metrics */}
+          <div className="bg-card border border-border rounded-2xl p-5 shadow-sm space-y-3">
+            <h3 className="text-xs font-bold text-on-surface-variant uppercase tracking-wider border-b border-border pb-2">
+              Realtime AI Detection Metrics
+            </h3>
+
+            <div className="space-y-1">
+              <StatusRow label="Face Detected" ok={telemetry.faceDetected} note={telemetry.faceDetected ? 'VERIFIED' : 'SEARCHING'} />
+              <StatusRow label="Eyes On Road" ok={telemetry.eyesOnRoad} note={telemetry.eyesOnRoad ? 'FOCUSED' : 'DISTRACTED'} />
+              <StatusRow label="Phone Usage" ok={!telemetry.phoneDetected} note={telemetry.phoneDetected ? 'DETECTED' : 'CLEAR'} />
+              <StatusRow label="Seat Belt Fastened" ok={telemetry.seatbeltOk} note={telemetry.seatbeltOk ? 'BUCKLED' : 'UNBUCKLED'} />
+              <StatusRow label="Drowsiness Level" ok={telemetry.drowsiness < 30} note={`${telemetry.drowsiness}%`} />
             </div>
 
-            {/* Current Alert */}
-            <div className="mt-4 pt-3 border-t border-border">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-2">Current Alert</span>
-              <div className="p-2.5 rounded-xl bg-emerald-500/5 border border-emerald-500/20 text-xs text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-2">
-                <CheckCircle2 size={14} /> No Active Alerts
-              </div>
-            </div>
-
-            {/* Alert simulator */}
-            <div className="mt-4 pt-3 border-t border-border">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant block mb-2">Simulate Alert</span>
+            {/* Test alert trigger buttons */}
+            <div className="pt-2 border-t border-border">
+              <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider mb-2">Simulate AI Detections</p>
               <div className="grid grid-cols-3 gap-1.5">
-                {[
-                  { label: 'Phone', icon: Smartphone, type: 'phone' as const },
-                  { label: 'Fatigue', icon: Eye, type: 'fatigue' as const },
-                  { label: 'Belt', icon: ShieldAlert, type: 'seatbelt' as const },
-                ].map(({ label, icon: Icon, type }) => (
-                  <button key={label} onClick={() => triggerAlert(type)}
-                    className="py-1.5 rounded-lg bg-surface hover:bg-rose-500/10 border border-border hover:border-rose-500/30 text-[10px] font-semibold text-on-surface-variant hover:text-rose-500 transition-colors flex flex-col items-center gap-1">
-                    <Icon size={13} />
-                    {label}
-                  </button>
-                ))}
+                <button
+                  onClick={() => triggerAlert('phone')}
+                  className="px-2 py-1.5 rounded-lg bg-surface hover:bg-card border border-border text-[10px] font-semibold text-on-surface flex flex-col items-center gap-1 transition-colors"
+                >
+                  <Smartphone size={12} className="text-rose-500" />
+                  Phone
+                </button>
+                <button
+                  onClick={() => triggerAlert('fatigue')}
+                  className="px-2 py-1.5 rounded-lg bg-surface hover:bg-card border border-border text-[10px] font-semibold text-on-surface flex flex-col items-center gap-1 transition-colors"
+                >
+                  <Eye size={12} className="text-amber-500" />
+                  Fatigue
+                </button>
+                <button
+                  onClick={() => triggerAlert('seatbelt')}
+                  className="px-2 py-1.5 rounded-lg bg-surface hover:bg-card border border-border text-[10px] font-semibold text-on-surface flex flex-col items-center gap-1 transition-colors"
+                >
+                  <ShieldAlert size={12} className="text-rose-500" />
+                  Seatbelt
+                </button>
               </div>
             </div>
           </div>
+
+          {/* Recent Event Log */}
+          <div className="bg-card border border-border rounded-2xl p-5 shadow-sm space-y-3">
+            <h3 className="text-xs font-bold text-on-surface-variant uppercase tracking-wider border-b border-border pb-2">
+              Recent Events Log
+            </h3>
+            <div className="space-y-2.5">
+              {EVENTS.map((ev, i) => (
+                <div key={i} className="flex items-center gap-3 text-xs">
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ev.dot}`} />
+                  <span className="font-mono text-on-surface-variant text-[11px]">{ev.time}</span>
+                  <span className={`font-semibold ${ev.color}`}>{ev.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
         </div>
+
       </div>
 
-      {/* ── BOTTOM: RECENT SAFETY EVENTS (slim card) ──────── */}
-      <div className="mx-4 mb-4">
-        <div className="bg-card border border-border rounded-2xl p-4 shadow-sm transition-colors">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-bold uppercase tracking-wider text-on-surface flex items-center gap-2">
-              <Shield size={14} className="text-primary" />
-              Recent Safety Events
-            </span>
-            <span className="text-[10px] text-on-surface-variant">Last 5 events</span>
-          </div>
-          <div className="flex flex-col sm:flex-row gap-2">
-            {EVENTS.map((ev) => (
-              <div key={ev.time + ev.label}
-                className="flex-1 flex items-center gap-2 px-3 py-2 rounded-xl bg-surface border border-border hover:border-primary/30 transition-colors min-w-0">
-                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ev.dot}`} />
-                <div className="min-w-0">
-                  <p className="text-[11px] font-bold text-on-surface truncate">{ev.label}</p>
-                  <span className="text-[10px] text-on-surface-variant font-mono">{ev.time}</span>
+      {/* ━━━ END RIDE CONFIRMATION MODAL ━━━ */}
+      <AnimatePresence>
+        {showEndRideModal && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowEndRideModal(false)}
+              className="absolute inset-0 bg-black/75 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.94, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.94, y: 12 }}
+              className="relative w-full max-w-sm bg-card border border-border rounded-3xl p-6 shadow-2xl z-10 space-y-4 text-on-surface"
+            >
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-500 flex-shrink-0">
+                  <StopCircle size={22} />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold tracking-tight">End current ride?</h3>
+                  <p className="text-xs text-on-surface-variant">Live telemetry session</p>
                 </div>
               </div>
-            ))}
+              <p className="text-xs text-on-surface-variant leading-relaxed">
+                This will stop monitoring and save the trip.
+              </p>
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowEndRideModal(false)}
+                  className="px-4 py-2 rounded-xl border border-border bg-surface hover:bg-card text-on-surface text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmEndRide}
+                  className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 active:scale-95 text-white text-xs font-bold shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <StopCircle size={14} />
+                  End Ride
+                </button>
+              </div>
+            </motion.div>
           </div>
-        </div>
-      </div>
+        )}
+      </AnimatePresence>
 
-      {/* ── FULLSCREEN MODAL ──────────────────────────────── */}
+      {/* Fullscreen Camera Modal */}
       <AnimatePresence>
         {cameraFull && (
           <motion.div
@@ -283,13 +349,15 @@ const Dashboard = memo(function Dashboard() {
             className="fixed inset-0 z-[9999] bg-black flex flex-col"
           >
             <div className="h-12 bg-black/80 backdrop-blur-md px-4 flex items-center justify-between text-white border-b border-white/10 flex-shrink-0">
-              <div className="flex items-center gap-2.5">
-                <Radio size={15} className="text-emerald-400 animate-pulse" />
-                <span className="font-bold text-sm font-mono">FULLSCREEN MONITORING • LIVE WEBCAM • DRIVER #4082</span>
+              <div className="flex items-center gap-2">
+                <Radio size={16} className="text-emerald-400 animate-pulse" />
+                <span className="font-bold text-sm font-mono">LIVE WEBCAM CAM-01 • CABIN INFRARED</span>
               </div>
-              <button onClick={() => setCameraFull(false)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-colors">
-                <Minimize2 size={14} /> Exit
+              <button
+                onClick={() => setCameraFull(false)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-colors"
+              >
+                <Minimize2 size={14} /> Exit Fullscreen
               </button>
             </div>
             <div className="flex-1 relative overflow-hidden">
@@ -298,6 +366,7 @@ const Dashboard = memo(function Dashboard() {
           </motion.div>
         )}
       </AnimatePresence>
+
     </div>
   )
 })

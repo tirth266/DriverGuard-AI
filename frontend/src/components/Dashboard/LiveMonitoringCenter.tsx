@@ -318,9 +318,9 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
           <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-xl flex flex-col h-full min-h-0">
 
             {/* Toolbar: REC | Snapshot | Expand | End Ride */}
-            <div className="px-3 py-2 bg-surface border-b border-border flex items-center justify-between gap-2 flex-wrap flex-shrink-0">
-              <div className="flex items-center gap-2">
-                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/20 text-[10px]">
+            <div className="px-3 py-2 bg-surface border-b border-border flex items-center justify-between gap-2 overflow-visible flex-nowrap flex-shrink-0">
+              <div className="flex items-center gap-2 flex-shrink min-w-0">
+                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/20 text-[10px] flex-shrink-0">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 pulse-dot" /> LIVE 1080P
                 </span>
                 <span className="text-xs font-mono text-on-surface font-semibold hidden sm:block truncate">
@@ -328,11 +328,11 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
                 </span>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-nowrap overflow-visible flex-shrink-0">
                 {/* REC Button */}
                 <button
                   onClick={() => setIsRecording(r => !r)}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold transition-colors ${
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold transition-colors flex-shrink-0 ${
                     isRecording
                       ? 'bg-rose-500/10 text-rose-500 border-rose-500/20'
                       : 'bg-surface text-on-surface-variant border-border'
@@ -345,7 +345,7 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
                 {/* Snapshot Button */}
                 <button
                   onClick={handleSnapshot}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface hover:bg-card border border-border text-on-surface-variant hover:text-on-surface transition-colors text-xs font-medium"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface hover:bg-card border border-border text-on-surface-variant hover:text-on-surface transition-colors text-xs font-medium flex-shrink-0"
                 >
                   <Camera size={13} />
                   <span className="hidden sm:inline">Snapshot</span>
@@ -354,16 +354,16 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
                 {/* Expand / Fullscreen Button */}
                 <button
                   onClick={() => setIsFullscreen(true)}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary text-white hover:opacity-90 transition-opacity text-xs font-medium"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary text-white hover:opacity-90 transition-opacity text-xs font-medium flex-shrink-0"
                 >
                   <Maximize2 size={13} />
                   <span className="hidden sm:inline">Expand</span>
                 </button>
 
-                {/* TASK 1: END RIDE BUTTON (Red, Rounded, Modern HeroUI Style) */}
+                {/* STEP 7: END RIDE BUTTON (bg-red-600 hover:bg-red-700 text-white rounded-lg px-4 py-1.5 flex-shrink-0 whitespace-nowrap z-50) */}
                 <button
                   onClick={() => setShowEndRideModal(true)}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs font-bold shadow-md hover:shadow-rose-600/20 transition-all cursor-pointer"
+                  className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-4 py-1.5 flex-shrink-0 whitespace-nowrap z-50 flex items-center gap-1.5 text-xs font-bold shadow-md hover:shadow-red-600/20 transition-all cursor-pointer"
                   title="End current ride session"
                 >
                   <StopCircle size={14} />
