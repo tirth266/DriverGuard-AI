@@ -16,6 +16,7 @@ import {
   User as UserIcon,
 } from 'lucide-react'
 import { useToast } from '../../context/ToastContext'
+import WebcamFeed from './WebcamFeed'
 
 /* ─── Mock Driver List with Individual Telemetry ───────────── */
 
@@ -168,6 +169,16 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [isRecording, setIsRecording] = useState(true)
 
+  // Real-time telemetry state for live camera
+  const [liveTelemetry, setLiveTelemetry] = useState({
+    score: 98,
+    eyesOnRoad: true,
+    phoneDetected: false,
+    seatbeltOk: true,
+    drowsiness: 2,
+    faceDetected: true,
+  })
+
   const activeDriver = FLEET_DRIVERS.find(d => d.id === selectedDriverId) || FLEET_DRIVERS[0]
 
   const filteredDrivers = FLEET_DRIVERS.filter(d => {
@@ -179,7 +190,7 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
   })
 
   const handleSnapshot = () => {
-    toast.success('Snapshot Captured', `Saved frame from ${activeDriver.name} (${activeDriver.vehicle})`)
+    toast.success('Snapshot Captured', `Saved live camera frame from ${activeDriver.name} (${activeDriver.vehicle})`)
   }
 
   return (
@@ -333,56 +344,19 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
               </div>
             </div>
 
-            {/* Camera Display (16:9 Aspect Ratio) */}
-            <div className="relative bg-black flex-1 aspect-video overflow-hidden group">
-              <motion.img
-                key={activeDriver.id}
-                initial={{ opacity: 0.6, scale: 0.99 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.4 }}
-                src={activeDriver.feedImage}
-                alt={activeDriver.name}
-                className="w-full h-full object-cover"
+            {/* Camera Display (Live Webcam with OpenCV) */}
+            <div className="relative bg-black flex-1 aspect-video overflow-hidden group min-h-[300px]">
+              <WebcamFeed
+                isRecording={isRecording}
+                onTelemetryUpdate={(newTel) => setLiveTelemetry(prev => ({ ...prev, ...newTel }))}
+                className="w-full h-full"
               />
-
-              {/* Bounding box AI overlay */}
-              <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 550 380" preserveAspectRatio="none">
-                <rect
-                  x="170" y="30" width="200" height="180" fill="none"
-                  stroke={activeDriver.phoneDetected || !activeDriver.eyesOnRoad ? '#f43f5e' : '#22c55e'}
-                  strokeWidth="1.5" strokeDasharray="6,3" opacity="0.9"
-                />
-                <line x1="170" y1="30" x2="190" y2="30" stroke={activeDriver.phoneDetected ? '#f43f5e' : '#22c55e'} strokeWidth="2.5" />
-                <line x1="170" y1="30" x2="170" y2="50" stroke={activeDriver.phoneDetected ? '#f43f5e' : '#22c55e'} strokeWidth="2.5" />
-                <line x1="370" y1="30" x2="350" y2="30" stroke={activeDriver.phoneDetected ? '#f43f5e' : '#22c55e'} strokeWidth="2.5" />
-                <line x1="370" y1="30" x2="370" y2="50" stroke={activeDriver.phoneDetected ? '#f43f5e' : '#22c55e'} strokeWidth="2.5" />
-              </svg>
-
-              {/* Scanning laser animation */}
-              <motion.div
-                className="absolute left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-emerald-400/70 to-transparent pointer-events-none"
-                animate={{ top: ['3%', '94%', '3%'] }}
-                transition={{ duration: 5, repeat: Infinity, ease: 'linear' }}
-              />
-
-              {/* Top HUD */}
-              <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 text-white flex items-center gap-2 text-xs font-mono">
-                <Radio size={13} className="text-emerald-400 animate-pulse" />
-                AI CABIN SAFETY SCANNER
-              </div>
-
-              {/* Status Alert Overlay if Alert */}
-              {activeDriver.phoneDetected && (
-                <div className="absolute top-3 right-3 bg-rose-600 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-lg animate-bounce">
-                  <ShieldAlert size={14} /> Phone Detected
-                </div>
-              )}
             </div>
 
             {/* Bottom Status Strip */}
             <div className="px-4 py-2 bg-surface border-t border-border flex items-center justify-between text-xs text-on-surface-variant font-medium flex-shrink-0">
               <span>VEHICLE: <span className="font-bold text-on-surface">{activeDriver.vehicle}</span></span>
-              <span>SAFETY SCORE: <span className="font-mono font-bold text-emerald-500">{activeDriver.score}/100</span></span>
+              <span>SAFETY SCORE: <span className="font-mono font-bold text-emerald-500">{liveTelemetry.score}/100</span></span>
             </div>
           </div>
         </div>
@@ -407,9 +381,9 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
           {/* Safety Score Gauge */}
           <div className="flex items-center gap-3 p-3 rounded-xl bg-surface border border-border">
             <div className="relative flex-shrink-0">
-              <CircularGauge value={activeDriver.score} size={76} />
+              <CircularGauge value={liveTelemetry.score} size={76} />
               <div className="absolute inset-0 flex items-center justify-center rotate-[90deg]">
-                <span className="text-xs font-extrabold text-on-surface font-mono">{activeDriver.score}%</span>
+                <span className="text-xs font-extrabold text-on-surface font-mono">{liveTelemetry.score}%</span>
               </div>
             </div>
             <div>
@@ -417,10 +391,10 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
                 Safety Score
               </span>
               <span className="text-lg font-extrabold text-on-surface font-mono">
-                {activeDriver.score}<span className="text-xs text-primary font-medium">/100</span>
+                {liveTelemetry.score}<span className="text-xs text-primary font-medium">/100</span>
               </span>
               <p className="text-[10px] text-emerald-500 font-semibold mt-0.5">
-                {activeDriver.score >= 90 ? 'High Compliance' : 'Review Advised'}
+                {liveTelemetry.score >= 90 ? 'High Compliance' : 'Review Advised'}
               </p>
             </div>
           </div>
@@ -429,23 +403,23 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
           <div className="space-y-2 text-xs">
             <div className="flex items-center justify-between py-1.5 border-b border-border">
               <span className="text-on-surface-variant">Seat Belt</span>
-              <span className={`font-bold flex items-center gap-1 ${activeDriver.seatbeltOk ? 'text-emerald-500' : 'text-rose-500'}`}>
-                {activeDriver.seatbeltOk ? <CheckCircle2 size={13} /> : <ShieldAlert size={13} />}
-                {activeDriver.seatbeltOk ? 'COMPLIANT' : 'UNBUCKLED'}
+              <span className={`font-bold flex items-center gap-1 ${liveTelemetry.seatbeltOk ? 'text-emerald-500' : 'text-rose-500'}`}>
+                {liveTelemetry.seatbeltOk ? <CheckCircle2 size={13} /> : <ShieldAlert size={13} />}
+                {liveTelemetry.seatbeltOk ? 'COMPLIANT' : 'UNBUCKLED'}
               </span>
             </div>
 
             <div className="flex items-center justify-between py-1.5 border-b border-border">
               <span className="text-on-surface-variant">Phone Usage</span>
-              <span className={`font-bold flex items-center gap-1 ${!activeDriver.phoneDetected ? 'text-emerald-500' : 'text-rose-500'}`}>
-                {!activeDriver.phoneDetected ? <CheckCircle2 size={13} /> : <Smartphone size={13} />}
-                {!activeDriver.phoneDetected ? 'NONE' : 'DETECTED'}
+              <span className={`font-bold flex items-center gap-1 ${!liveTelemetry.phoneDetected ? 'text-emerald-500' : 'text-rose-500'}`}>
+                {!liveTelemetry.phoneDetected ? <CheckCircle2 size={13} /> : <Smartphone size={13} />}
+                {!liveTelemetry.phoneDetected ? 'NONE' : 'DETECTED'}
               </span>
             </div>
 
             <div className="flex items-center justify-between py-1.5 border-b border-border">
               <span className="text-on-surface-variant">Smoking</span>
-              <span className={`font-bold flex items-center gap-1 ${!activeDriver.smokingDetected ? 'text-emerald-500' : 'text-rose-500'}`}>
+              <span className={`font-bold flex items-center gap-1 text-emerald-500`}>
                 <CheckCircle2 size={13} /> NONE
               </span>
             </div>
@@ -453,25 +427,25 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
             <div className="py-1.5 border-b border-border space-y-1">
               <div className="flex items-center justify-between">
                 <span className="text-on-surface-variant">Fatigue Risk</span>
-                <span className="font-bold text-emerald-500">{activeDriver.drowsiness}%</span>
+                <span className="font-bold text-emerald-500">{liveTelemetry.drowsiness}%</span>
               </div>
               <div className="w-full h-1.5 bg-background rounded-full overflow-hidden">
-                <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${activeDriver.drowsiness}%` }} />
+                <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${liveTelemetry.drowsiness}%` }} />
               </div>
             </div>
 
             <div className="flex items-center justify-between py-1.5 border-b border-border">
               <span className="text-on-surface-variant">Eyes on Road</span>
-              <span className={`font-bold flex items-center gap-1 ${activeDriver.eyesOnRoad ? 'text-emerald-500' : 'text-rose-500'}`}>
-                {activeDriver.eyesOnRoad ? <Eye size={13} /> : <AlertTriangle size={13} />}
-                {activeDriver.eyesOnRoad ? 'FOCUSED' : 'DISTRACTED'}
+              <span className={`font-bold flex items-center gap-1 ${liveTelemetry.eyesOnRoad ? 'text-emerald-500' : 'text-rose-500'}`}>
+                {liveTelemetry.eyesOnRoad ? <Eye size={13} /> : <AlertTriangle size={13} />}
+                {liveTelemetry.eyesOnRoad ? 'FOCUSED' : 'DISTRACTED'}
               </span>
             </div>
 
             <div className="flex items-center justify-between py-1.5 border-b border-border">
               <span className="text-on-surface-variant">Hands on Wheel</span>
-              <span className={`font-bold flex items-center gap-1 ${activeDriver.handsOnWheel ? 'text-emerald-500' : 'text-amber-500'}`}>
-                {activeDriver.handsOnWheel ? 'BOTH' : 'ONE HAND'}
+              <span className={`font-bold flex items-center gap-1 text-emerald-500`}>
+                BOTH
               </span>
             </div>
           </div>
@@ -537,7 +511,7 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
               </button>
             </div>
             <div className="flex-1 relative overflow-hidden">
-              <img src={activeDriver.feedImage} alt="Fullscreen feed" className="w-full h-full object-contain" />
+              <WebcamFeed isRecording={isRecording} onTelemetryUpdate={(newTel) => setLiveTelemetry(prev => ({ ...prev, ...newTel }))} className="w-full h-full" />
             </div>
           </motion.div>
         )}

@@ -4,6 +4,7 @@ import { Check } from 'lucide-react'
 import SectionTitle from '../shared/SectionTitle'
 import Button from '../shared/Button'
 import GlassCard from '../shared/Card'
+import { use3DTilt } from '../../hooks/use3DTilt'
 
 const PLANS = [
   {
@@ -65,13 +66,85 @@ const PLANS = [
   },
 ]
 
-const cardVariants = {
-  hidden: { opacity: 0, y: 30 },
-  visible: (i: number) => ({
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.55, delay: i * 0.12, ease: 'easeOut' as const },
-  }),
+function PricingCard({ plan, index }: { plan: typeof PLANS[0]; index: number }) {
+  const tilt = use3DTilt({ maxRotation: 5, scale: 1.02 })
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 30 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.15 }}
+      transition={{ duration: 0.45, delay: index * 0.1, ease: 'easeOut' }}
+    >
+      <div
+        ref={tilt.ref}
+        style={tilt.style}
+        onMouseMove={tilt.onMouseMove}
+        onMouseLeave={tilt.onMouseLeave}
+        className="h-full"
+      >
+        <GlassCard
+          className={`rounded-2xl p-8 flex flex-col gap-6 relative h-full transition-shadow hover:shadow-2xl ${
+            plan.highlight
+              ? 'pricing-highlight ring-2 ring-primary shadow-xl shadow-primary/10'
+              : 'glass-card border border-border'
+          }`}
+        >
+          {/* Badge */}
+          {plan.highlight && 'badge' in plan && (
+            <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
+              <span className="px-4 py-1 rounded-full bg-primary text-white text-[11px] font-bold tracking-[0.08em] uppercase shadow-md">
+                {plan.badge}
+              </span>
+            </div>
+          )}
+
+          {/* Header */}
+          <div>
+            <h3 className="text-headline-md font-bold text-on-surface mb-1">
+              {plan.name}
+            </h3>
+            <p className="text-on-surface-variant text-[14px] leading-[1.5]">
+              {plan.description}
+            </p>
+          </div>
+
+          {/* Price */}
+          <div className="flex items-baseline gap-1">
+            <span className="font-metric text-[48px] leading-none font-extrabold text-on-surface tracking-[-0.02em]">
+              {plan.price}
+            </span>
+            {plan.period && (
+              <span className="text-on-surface-variant text-[14px]">{plan.period}</span>
+            )}
+          </div>
+
+          {/* Features */}
+          <ul className="space-y-3 flex-1" role="list">
+            {plan.features.map((feature) => (
+              <li key={feature} className="flex items-start gap-2.5">
+                <Check size={18} className="text-primary flex-shrink-0 mt-0.5" aria-hidden="true" />
+                <span className="text-on-surface-variant text-[14px] leading-[1.5]">
+                  {feature}
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          {/* CTA */}
+          <a href="#contact">
+            <Button
+              variant={plan.variant}
+              size="lg"
+              className="w-full"
+            >
+              {plan.cta}
+            </Button>
+          </a>
+        </GlassCard>
+      </div>
+    </motion.div>
+  )
 }
 
 const Pricing = memo(function Pricing() {
@@ -89,74 +162,7 @@ const Pricing = memo(function Pricing() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
         {PLANS.map((plan, i) => (
-          <motion.div
-            key={plan.name}
-            custom={i}
-            variants={cardVariants}
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, margin: '-40px' }}
-          >
-            <GlassCard
-              className={`rounded-2xl p-8 flex flex-col gap-6 relative h-full ${
-                plan.highlight
-                  ? 'pricing-highlight ring-2 ring-blue-600'
-                  : 'glass-card border border-border'
-              }`}
-            >
-              {/* Badge */}
-              {plan.highlight && 'badge' in plan && (
-                <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
-                  <span className="px-4 py-1 rounded-full bg-blue-600 text-white text-[11px] font-bold tracking-[0.08em] uppercase shadow-md">
-                    {plan.badge}
-                  </span>
-                </div>
-              )}
-
-              {/* Header */}
-              <div>
-                <h3 className="text-headline-md font-bold text-on-surface mb-1">
-                  {plan.name}
-                </h3>
-                <p className="text-on-surface-variant text-[14px] leading-[1.5]">
-                  {plan.description}
-                </p>
-              </div>
-
-              {/* Price */}
-              <div className="flex items-baseline gap-1">
-                <span className="font-metric text-[48px] leading-none font-extrabold text-on-surface tracking-[-0.02em]">
-                  {plan.price}
-                </span>
-                {plan.period && (
-                  <span className="text-on-surface-variant text-[14px]">{plan.period}</span>
-                )}
-              </div>
-
-              {/* Features */}
-              <ul className="space-y-3 flex-1" role="list">
-                {plan.features.map((feature) => (
-                  <li key={feature} className="flex items-start gap-2.5">
-                    <Check size={18} className="text-primary flex-shrink-0 mt-0.5" aria-hidden="true" />
-                    <span className="text-on-surface-variant text-[14px] leading-[1.5]">
-                      {feature}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-
-              {/* CTA */}
-              <a href="#contact">
-                <Button
-                  variant={plan.variant}
-                  size="lg"
-                  className="w-full"
-                >
-                  {plan.cta}
-                </Button>
-              </a>
-            </GlassCard>
-          </motion.div>
+          <PricingCard key={plan.name} plan={plan} index={i} />
         ))}
       </div>
     </section>

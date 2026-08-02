@@ -1,4 +1,4 @@
-import { memo, useState } from 'react'
+import { memo, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Shield,
@@ -13,11 +13,7 @@ import {
   ShieldAlert,
 } from 'lucide-react'
 import { useToast } from '../../context/ToastContext'
-
-/* ─── Constants ─────────────────────────────────────────── */
-
-const DRIVER_IMAGE =
-  'https://lh3.googleusercontent.com/aida-public/AB6AXuCcKaLxmdIZwnR0lQmtyJqnulBLej0a0G8kFHVn1alPzu5Bih45tWBAph9k-Y_O-mDBiS96RZ6X6Pm6niij5B-CplXhXHUVFwTuaIm9ON1SnuBg7edeuTBmwyT-UrudvWqkJQYfwkRmLV4JkTFdmL0Za-_fIa5CC0_p2urfVKpFZ5yHicpcA_Xzpw1Baf5ENstaxctcRb9e5Ob1HFkQ9ZCUPonuqkQZT2f-2yawldUCYahojUrdLzzydNygLW_VYW37cVHmdtONPi4'
+import WebcamFeed from './WebcamFeed'
 
 const EVENTS = [
   { time: '11:08 AM', label: 'Safe Driving Restored', color: 'text-emerald-500', dot: 'bg-emerald-500' },
@@ -65,7 +61,22 @@ const Dashboard = memo(function Dashboard() {
   const [cameraFull, setCameraFull] = useState(false)
   const [isRecording, setIsRecording] = useState(true)
   const [activeAlert, setActiveAlert] = useState<string | null>(null)
+  
+  // Real-time telemetry state updated by live OpenCV camera feed
+  const [telemetry, setTelemetry] = useState({
+    score: 98,
+    eyesOnRoad: true,
+    phoneDetected: false,
+    seatbeltOk: true,
+    drowsiness: 2,
+    faceDetected: true,
+  })
+
   const toast = useToast()
+
+  const handleTelemetryUpdate = useCallback((newTelemetry: any) => {
+    setTelemetry(prev => ({ ...prev, ...newTelemetry }))
+  }, [])
 
   const triggerAlert = (type: 'phone' | 'fatigue' | 'seatbelt') => {
     const messages = {
@@ -78,7 +89,7 @@ const Dashboard = memo(function Dashboard() {
     setTimeout(() => setActiveAlert(null), 5000)
   }
 
-  const handleSnapshot = () => toast.success('Snapshot Saved', 'Frame saved to incident log.')
+  const handleSnapshot = () => toast.success('Snapshot Saved', 'Live webcam frame saved to incident log.')
 
   return (
     <div className="w-full min-h-[calc(100vh-56px)] bg-background flex flex-col gap-0 transition-colors duration-300">
@@ -118,7 +129,7 @@ const Dashboard = memo(function Dashboard() {
                   <span className="w-2 h-2 rounded-full bg-emerald-500 pulse-dot" /> LIVE 1080P
                 </span>
                 <span className="text-xs font-mono text-on-surface-variant font-medium hidden sm:block">
-                  CAM-01 • CABIN INFRARED
+                  WEBCAM CAM-01 • CABIN INFRARED
                 </span>
               </div>
 
@@ -143,42 +154,20 @@ const Dashboard = memo(function Dashboard() {
               </div>
             </div>
 
-            {/* Feed */}
-            <div className="relative bg-black flex-1 overflow-hidden group" style={{ minHeight: '300px' }}>
-              <img src={DRIVER_IMAGE} alt="Live Driver Monitoring Feed"
-                className="w-full h-full object-cover opacity-90 transition-transform duration-500 group-hover:scale-[1.01]" />
-
-              {/* AI bounding overlay */}
-              <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 550 380" preserveAspectRatio="none">
-                <rect x="170" y="30" width="200" height="180" fill="none" stroke="#22c55e" strokeWidth="1.5" strokeDasharray="6,3" opacity="0.9" />
-                <rect x="120" y="150" width="310" height="200" fill="none" stroke="#22c55e" strokeWidth="1.5" strokeDasharray="6,3" opacity="0.7" />
-                <line x1="170" y1="30" x2="190" y2="30" stroke="#22c55e" strokeWidth="2.5" />
-                <line x1="170" y1="30" x2="170" y2="50" stroke="#22c55e" strokeWidth="2.5" />
-                <line x1="370" y1="30" x2="350" y2="30" stroke="#22c55e" strokeWidth="2.5" />
-                <line x1="370" y1="30" x2="370" y2="50" stroke="#22c55e" strokeWidth="2.5" />
-              </svg>
-
-              {/* Scanning laser */}
-              <motion.div
-                className="absolute left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-emerald-400/70 to-transparent pointer-events-none"
-                animate={{ top: ['3%', '94%', '3%'] }}
-                transition={{ duration: 5, repeat: Infinity, ease: 'linear' }}
-              />
-
-              {/* HUD label */}
-              <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 text-white flex items-center gap-2 text-xs font-mono">
-                <Radio size={13} className="text-emerald-400 animate-pulse" />
-                AI SAFETY GUARD ACTIVE
-              </div>
-            </div>
+            {/* LIVE WEBCAM FEED COMPONENT */}
+            <WebcamFeed
+              isRecording={isRecording}
+              onTelemetryUpdate={handleTelemetryUpdate}
+              className="flex-1"
+            />
 
             {/* Status bar */}
             <div className="px-4 py-2 bg-surface border-t border-border flex items-center justify-between text-xs text-on-surface-variant font-medium flex-shrink-0">
               <div className="flex items-center gap-4">
-                <span>STREAM: <span className="text-emerald-500 font-bold">1080P HD</span></span>
-                <span className="hidden sm:block">DRIVER: <span className="text-emerald-500 font-bold">VERIFIED</span></span>
+                <span>STREAM: <span className="text-emerald-500 font-bold">LIVE WEBCAM</span></span>
+                <span className="hidden sm:block">AI STATUS: <span className="text-emerald-500 font-bold">{telemetry.faceDetected ? 'DRIVER VERIFIED' : 'SEARCHING'}</span></span>
               </div>
-              <span className="font-semibold text-on-surface text-xs">FLEET #4082 — JOHN DRIVER</span>
+              <span className="font-semibold text-on-surface text-xs">FLEET #4082 — LIVE DRIVER MONITORING</span>
             </div>
           </div>
         </div>
@@ -198,33 +187,35 @@ const Dashboard = memo(function Dashboard() {
             {/* Gauge */}
             <div className="flex items-center gap-3 mb-4 p-3 rounded-xl bg-surface border border-border">
               <div className="relative flex-shrink-0">
-                <CircularGauge value={98} size={80} />
+                <CircularGauge value={telemetry.score} size={80} />
                 <div className="absolute inset-0 flex items-center justify-center rotate-[90deg]">
-                  <span className="text-sm font-extrabold text-primary">98%</span>
+                  <span className="text-sm font-extrabold text-primary">{telemetry.score}%</span>
                 </div>
               </div>
               <div>
                 <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider block mb-0.5">Safety Score</span>
-                <span className="text-xl font-extrabold text-on-surface font-mono">98<span className="text-sm text-primary font-medium">/100</span></span>
-                <p className="text-[10px] text-emerald-500 font-semibold mt-0.5">Top 5% Rating</p>
+                <span className="text-xl font-extrabold text-on-surface font-mono">{telemetry.score}<span className="text-sm text-primary font-medium">/100</span></span>
+                <p className="text-[10px] text-emerald-500 font-semibold mt-0.5">
+                  {telemetry.score >= 90 ? 'High Compliance' : 'Review Advised'}
+                </p>
               </div>
             </div>
 
             {/* Compliance checklist */}
             <div className="space-y-0">
-              <StatusRow label="Seat Belt" ok={true} note="COMPLIANT" />
-              <StatusRow label="Phone Usage" ok={true} note="NONE" />
+              <StatusRow label="Seat Belt" ok={telemetry.seatbeltOk} note={telemetry.seatbeltOk ? 'COMPLIANT' : 'UNBUCKLED'} />
+              <StatusRow label="Phone Usage" ok={!telemetry.phoneDetected} note={!telemetry.phoneDetected ? 'NONE' : 'DETECTED'} />
               <StatusRow label="Smoking" ok={true} note="NONE" />
               <div className="py-2 border-b border-border">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs text-on-surface-variant font-medium">Drowsiness</span>
-                  <span className="text-xs font-bold text-emerald-500">LOW 2%</span>
+                  <span className="text-xs font-bold text-emerald-500">LOW {telemetry.drowsiness}%</span>
                 </div>
                 <div className="w-full h-1.5 bg-background rounded-full overflow-hidden">
-                  <div className="h-full bg-emerald-500 rounded-full" style={{ width: '2%' }} />
+                  <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${telemetry.drowsiness}%` }} />
                 </div>
               </div>
-              <StatusRow label="Eyes on Road" ok={true} note="FOCUSED" />
+              <StatusRow label="Eyes on Road" ok={telemetry.eyesOnRoad} note={telemetry.eyesOnRoad ? 'FOCUSED' : 'DISTRACTED'} />
               <StatusRow label="Hands on Wheel" ok={true} note="BOTH" />
             </div>
 
@@ -294,7 +285,7 @@ const Dashboard = memo(function Dashboard() {
             <div className="h-12 bg-black/80 backdrop-blur-md px-4 flex items-center justify-between text-white border-b border-white/10 flex-shrink-0">
               <div className="flex items-center gap-2.5">
                 <Radio size={15} className="text-emerald-400 animate-pulse" />
-                <span className="font-bold text-sm font-mono">FULLSCREEN MONITORING • CAM-01 • DRIVER #4082</span>
+                <span className="font-bold text-sm font-mono">FULLSCREEN MONITORING • LIVE WEBCAM • DRIVER #4082</span>
               </div>
               <button onClick={() => setCameraFull(false)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-colors">
@@ -302,7 +293,7 @@ const Dashboard = memo(function Dashboard() {
               </button>
             </div>
             <div className="flex-1 relative overflow-hidden">
-              <img src={DRIVER_IMAGE} alt="Fullscreen feed" className="w-full h-full object-contain" />
+              <WebcamFeed isRecording={isRecording} onTelemetryUpdate={handleTelemetryUpdate} className="w-full h-full" />
             </div>
           </motion.div>
         )}

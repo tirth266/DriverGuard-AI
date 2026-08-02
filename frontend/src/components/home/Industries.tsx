@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import SectionTitle from '../shared/SectionTitle'
 import GlassCard from '../shared/Card'
+import { use3DTilt } from '../../hooks/use3DTilt'
 
 const INDUSTRIES = [
   { icon: Truck, title: 'Logistics', description: 'Protect long-haul and last-mile delivery drivers across your entire fleet.' },
@@ -24,13 +25,38 @@ const INDUSTRIES = [
   { icon: Building2, title: 'Corporate Fleets', description: 'Protect your company vehicles and drivers with enterprise-grade safety.' },
 ]
 
-const cardVariants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: (i: number) => ({
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.5, delay: i * 0.07, ease: 'easeOut' as const },
-  }),
+function IndustryCard({ industry, index }: { industry: typeof INDUSTRIES[0]; index: number }) {
+  const Icon = industry.icon
+  const tilt = use3DTilt({ maxRotation: 5, scale: 1.02 })
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.15 }}
+      transition={{ duration: 0.4, delay: (index % 4) * 0.07, ease: 'easeOut' }}
+    >
+      <div
+        ref={tilt.ref}
+        style={tilt.style}
+        onMouseMove={tilt.onMouseMove}
+        onMouseLeave={tilt.onMouseLeave}
+        className="h-full"
+      >
+        <GlassCard className="glass-card-hover p-6 h-full flex flex-col gap-4 rounded-2xl group cursor-pointer transition-shadow hover:shadow-xl">
+          <div className="w-11 h-11 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-all duration-300 group-hover:scale-110">
+            <Icon size={22} className="text-primary group-hover:text-white transition-colors duration-300" aria-hidden="true" />
+          </div>
+          <h3 className="text-[18px] font-semibold text-on-surface leading-tight">
+            {industry.title}
+          </h3>
+          <p className="text-on-surface-variant text-[14px] leading-[1.6]">
+            {industry.description}
+          </p>
+        </GlassCard>
+      </div>
+    </motion.div>
+  )
 }
 
 const Industries = memo(function Industries() {
@@ -47,31 +73,9 @@ const Industries = memo(function Industries() {
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        {INDUSTRIES.map((industry, i) => {
-          const Icon = industry.icon
-          return (
-            <motion.div
-              key={industry.title}
-              custom={i}
-              variants={cardVariants}
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, margin: '-30px' }}
-            >
-              <GlassCard className="glass-card-hover p-6 h-full flex flex-col gap-4 rounded-2xl group cursor-default">
-                <div className="w-11 h-11 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-colors duration-300">
-                  <Icon size={22} className="text-primary group-hover:text-white transition-colors duration-300" aria-hidden="true" />
-                </div>
-                <h3 className="text-[18px] font-semibold text-on-surface leading-tight">
-                  {industry.title}
-                </h3>
-                <p className="text-on-surface-variant text-[14px] leading-[1.6]">
-                  {industry.description}
-                </p>
-              </GlassCard>
-            </motion.div>
-          )
-        })}
+        {INDUSTRIES.map((industry, i) => (
+          <IndustryCard key={industry.title} industry={industry} index={i} />
+        ))}
       </div>
     </section>
   )

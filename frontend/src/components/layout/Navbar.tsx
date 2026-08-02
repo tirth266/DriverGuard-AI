@@ -79,20 +79,23 @@ const Navbar = memo(function Navbar() {
   }
 
   return (
-    <header
+    <motion.header
+      initial={{ opacity: 0, y: -16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: 'easeOut' }}
       className={`fixed top-0 w-full z-50 glass-header border-b transition-all duration-300 ${
-        scrolled ? 'shadow-sm border-border' : 'border-transparent shadow-none'
+        scrolled ? 'shadow-md border-border bg-surface/90 backdrop-blur-md' : 'border-transparent shadow-none'
       }`}
       role="banner"
     >
       <div className="flex justify-between items-center h-20 px-4 md:px-16 max-w-[1440px] mx-auto" ref={dropdownRef}>
 
-        {/* Logo */}
-        <Link to="/" className="flex items-center gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded" aria-label="DriverGuard AI Home">
-          <div className="h-10 w-10 flex items-center justify-center rounded-xl bg-primary/10 border border-primary/20">
+        {/* Logo with subtle hover scale */}
+        <Link to="/" className="flex items-center gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded group" aria-label="DriverGuard AI Home">
+          <div className="h-10 w-10 flex items-center justify-center rounded-xl bg-primary/10 border border-primary/20 group-hover:scale-105 group-hover:bg-primary/20 transition-all duration-200">
             <Shield className="text-primary" size={22} />
           </div>
-          <span className="font-display text-headline-md text-on-surface font-extrabold tracking-tighter">
+          <span className="font-display text-headline-md text-on-surface font-extrabold tracking-tighter group-hover:text-primary transition-colors">
             DriverGuard <span className="text-primary font-normal">AI</span>
           </span>
         </Link>
@@ -102,33 +105,31 @@ const Navbar = memo(function Navbar() {
           {!isAuthenticated && PUBLIC_LINKS.map(link => (
             <a key={link.label} href={link.href}
               onClick={e => handleAnchorClick(e, link.href)}
-              className="font-label-caps text-label-caps transition-colors tracking-[0.05em] uppercase text-on-surface-variant hover:text-primary font-medium text-xs">
+              className="font-label-caps text-label-caps transition-all duration-200 tracking-[0.05em] uppercase text-on-surface-variant hover:text-primary hover:-translate-y-0.5 font-medium text-xs">
               {link.label}
             </a>
           ))}
 
           {/* Authenticated: Personal */}
           {isAuthenticated && isPersonal && (
-            <>
-              <Link to="/dashboard" className="text-xs font-semibold text-on-surface-variant hover:text-primary transition-colors uppercase tracking-wider">
-                Dashboard
-              </Link>
-            </>
+            <Link to="/dashboard" className="text-xs font-semibold text-on-surface-variant hover:text-primary transition-all duration-200 hover:-translate-y-0.5 uppercase tracking-wider">
+              Dashboard
+            </Link>
           )}
 
           {/* Authenticated: Business */}
           {isAuthenticated && isBusiness && (
             <>
-              <Link to="/dashboard" className="text-xs font-semibold text-on-surface-variant hover:text-primary transition-colors uppercase tracking-wider">
+              <Link to="/dashboard" className="text-xs font-semibold text-on-surface-variant hover:text-primary transition-all duration-200 hover:-translate-y-0.5 uppercase tracking-wider">
                 Dashboard
               </Link>
-              <Link to="/fleet" className="text-xs font-semibold text-on-surface-variant hover:text-primary transition-colors uppercase tracking-wider">
+              <Link to="/fleet" className="text-xs font-semibold text-on-surface-variant hover:text-primary transition-all duration-200 hover:-translate-y-0.5 uppercase tracking-wider">
                 Fleet
               </Link>
-              <Link to="/company-setup" className="text-xs font-semibold text-on-surface-variant hover:text-primary transition-colors uppercase tracking-wider">
+              <Link to="/company-setup" className="text-xs font-semibold text-on-surface-variant hover:text-primary transition-all duration-200 hover:-translate-y-0.5 uppercase tracking-wider">
                 Company
               </Link>
-              <Link to="/enterprise" className="text-xs font-semibold text-on-surface-variant hover:text-primary transition-colors uppercase tracking-wider">
+              <Link to="/enterprise" className="text-xs font-semibold text-on-surface-variant hover:text-primary transition-all duration-200 hover:-translate-y-0.5 uppercase tracking-wider">
                 Billing
               </Link>
             </>
@@ -150,7 +151,7 @@ const Navbar = memo(function Navbar() {
             <div className="flex items-center gap-3 pl-1 relative">
               {/* Dashboard button */}
               <Link to={isBusiness ? '/fleet' : '/dashboard'}>
-                <Button variant="primary" size="sm" className="flex items-center gap-1.5">
+                <Button variant="primary" size="sm" className="flex items-center gap-1.5 shadow-sm hover:shadow-md">
                   <LayoutDashboard size={14} />
                   <span>{isBusiness ? 'Fleet Console' : 'Dashboard'}</span>
                 </Button>
@@ -160,7 +161,7 @@ const Navbar = memo(function Navbar() {
               <div className="relative">
                 <button
                   onClick={() => { setNotificationsOpen(!notificationsOpen); setProfileOpen(false) }}
-                  className="p-2 rounded-xl border border-border bg-card hover:bg-surface text-on-surface-variant hover:text-on-surface transition-colors relative"
+                  className="p-2 rounded-xl border border-border bg-card hover:bg-surface text-on-surface-variant hover:text-on-surface hover:scale-105 hover:-translate-y-0.5 transition-all relative"
                   aria-label="Notifications"
                 >
                   <Bell size={18} />
@@ -206,7 +207,7 @@ const Navbar = memo(function Navbar() {
               <div className="relative">
                 <button
                   onClick={() => { setProfileOpen(!profileOpen); setNotificationsOpen(false) }}
-                  className="flex items-center gap-2 p-1 pl-1.5 pr-2.5 rounded-full border border-border bg-card hover:bg-surface transition-all group"
+                  className="flex items-center gap-2 p-1 pl-1.5 pr-2.5 rounded-full border border-border bg-card hover:bg-surface hover:scale-102 transition-all group"
                   aria-expanded={profileOpen}
                   aria-label="User menu"
                 >
@@ -398,7 +399,7 @@ const Navbar = memo(function Navbar() {
           </motion.div>
         )}
       </AnimatePresence>
-    </header>
+    </motion.header>
   )
 })
 

@@ -170,11 +170,11 @@ function AnimatedRoutes() {
 export default function App() {
   return (
     <ToastProvider>
-      <AuthProvider>
-        <BrowserRouter>
+      <BrowserRouter>
+        <AuthProvider>
           <AnimatedRoutes />
-        </BrowserRouter>
-      </AuthProvider>
+        </AuthProvider>
+      </BrowserRouter>
     </ToastProvider>
   )
 }

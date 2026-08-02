@@ -32,6 +32,7 @@ interface AuthContextType {
   login: (email: string, pass: string, rememberMe?: boolean) => Promise<boolean>
   signup: (name: string, company: string, email: string, pass: string) => Promise<boolean>
   loginWithGoogle: () => Promise<boolean>
+  handleGoogleCallback: (token: string, rememberMe?: boolean) => Promise<boolean>
   forgotPassword: (email: string) => Promise<boolean>
   logout: () => void
   setAccountType: (type: AccountType) => void
@@ -42,21 +43,6 @@ interface AuthContextType {
 
 const TOKEN_KEY = 'driverguard_auth_token'
 const USER_KEY  = 'driverguard_user_data'
-
-/* ─── Mock defaults ──────────────────────────────────────── */
-
-const MOCK_USER: User = {
-  id: 'usr_8921a',
-  name: 'Sarah Connor',
-  email: 'sarah.connor@skyfleet.io',
-  company: 'Skyline Transit Operators',
-  role: 'Fleet Manager',
-  avatar:
-    'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=250&q=80',
-  accountType: null,
-  isFirstLogin: true,
-  companySetupComplete: false,
-}
 
 /* ─── Context ────────────────────────────────────────────── */
 
@@ -91,69 +77,154 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     storage.setItem(USER_KEY, JSON.stringify(updatedUser))
   }, [])
 
+  /* Handle Google OAuth callback - call this from AuthPage on mount */
+  const handleGoogleCallback = useCallback(async (callbackToken: string, rememberMe = true): Promise<boolean> => {
+    setIsLoading(true)
+    try {
+      // Verify the token with backend /api/auth/me
+      const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+      const res = await fetch(`${backendUrl}/api/auth/me`, {
+        headers: { 'Authorization': `Bearer ${callbackToken}` }
+      })
+      
+      if (!res.ok) {
+        throw new Error('Invalid token from Google OAuth')
+      }
+      
+      const data = await res.json()
+      if (!data.success || !data.user) {
+        throw new Error('Failed to get user from token')
+      }
+
+      const authUser: User = {
+        id: data.user.id,
+        name: data.user.name,
+        email: data.user.email,
+        company: data.user.company,
+        role: data.user.role,
+        avatar: data.user.avatar,
+        accountType: data.user.account_type,
+        isFirstLogin: data.user.is_first_login ?? data.user.isFirstLogin ?? false,
+        companySetupComplete: data.user.company_setup_complete ?? data.user.companySetupComplete ?? false,
+      }
+
+      setToken(callbackToken)
+      setUser(authUser)
+
+      const storage = rememberMe ? localStorage : sessionStorage
+      storage.setItem(TOKEN_KEY, callbackToken)
+      persistUser(authUser, rememberMe)
+
+      setIsLoading(false)
+      toast.success('Authenticated via Google', `Welcome, ${authUser.name}!`)
+      return true
+    } catch (error) {
+      setIsLoading(false)
+      toast.error('Google Auth Failed', error instanceof Error ? error.message : 'Unknown error')
+      return false
+    }
+  }, [persistUser, toast])
+
   /* ── Login ─────────────────────────────────────────────── */
   const login = async (email: string, _pass: string, rememberMe = true): Promise<boolean> => {
     setIsLoading(true)
-    await new Promise(r => setTimeout(r, 800))
+    const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+    
+    try {
+      const res = await fetch(`${backendUrl}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: _pass })
+      })
 
-    const mockToken = 'mock_driverguard_jwt_token'
-    const authUser: User = { ...MOCK_USER, email: email || MOCK_USER.email }
+      const data = await res.json()
 
-    setToken(mockToken)
-    setUser(authUser)
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Login failed')
+      }
 
-    const storage = rememberMe ? localStorage : sessionStorage
-    storage.setItem(TOKEN_KEY, mockToken)
-    persistUser(authUser, rememberMe)
+      const authUser: User = {
+        id: data.user.id,
+        name: data.user.name,
+        email: data.user.email,
+        company: data.user.company,
+        role: data.user.role,
+        avatar: data.user.avatar,
+        accountType: data.user.account_type,
+        isFirstLogin: data.user.is_first_login ?? data.user.isFirstLogin ?? false,
+        companySetupComplete: data.user.company_setup_complete ?? data.user.companySetupComplete ?? false,
+      }
 
-    setIsLoading(false)
-    toast.success('Welcome Back!', `Logged in as ${authUser.name}`)
-    return true
+      setToken(data.token)
+      setUser(authUser)
+
+      const storage = rememberMe ? localStorage : sessionStorage
+      storage.setItem(TOKEN_KEY, data.token)
+      persistUser(authUser, rememberMe)
+
+      setIsLoading(false)
+      toast.success('Welcome Back!', `Logged in as ${authUser.name}`)
+      return true
+    } catch (error) {
+      setIsLoading(false)
+      toast.error('Login Failed', error instanceof Error ? error.message : 'Unknown error')
+      return false
+    }
   }
 
   /* ── Signup ────────────────────────────────────────────── */
   const signup = async (name: string, company: string, email: string, _pass: string): Promise<boolean> => {
     setIsLoading(true)
-    await new Promise(r => setTimeout(r, 1000))
+    const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+    
+    try {
+      const res = await fetch(`${backendUrl}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, company, email, password: _pass })
+      })
 
-    const mockToken = 'mock_signup_jwt_token'
-    const newUser: User = {
-      id: `usr_${Math.random().toString(36).substring(2, 9)}`,
-      name,
-      email,
-      company,
-      role: 'Account Owner',
-      accountType: null,
-      isFirstLogin: true,
-      companySetupComplete: false,
+      const data = await res.json()
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Signup failed')
+      }
+
+      const authUser: User = {
+        id: data.user.id,
+        name: data.user.name,
+        email: data.user.email,
+        company: data.user.company,
+        role: data.user.role,
+        avatar: data.user.avatar,
+        accountType: data.user.account_type,
+        isFirstLogin: data.user.is_first_login ?? data.user.isFirstLogin ?? false,
+        companySetupComplete: data.user.company_setup_complete ?? data.user.companySetupComplete ?? false,
+      }
+
+      setToken(data.token)
+      setUser(authUser)
+      localStorage.setItem(TOKEN_KEY, data.token)
+      persistUser(authUser)
+
+      setIsLoading(false)
+      toast.success('Account Created!', `Welcome to DriverGuard AI, ${name}!`)
+      return true
+    } catch (error) {
+      setIsLoading(false)
+      toast.error('Signup Failed', error instanceof Error ? error.message : 'Unknown error')
+      return false
     }
-
-    setToken(mockToken)
-    setUser(newUser)
-    localStorage.setItem(TOKEN_KEY, mockToken)
-    persistUser(newUser)
-
-    setIsLoading(false)
-    toast.success('Account Created!', `Welcome to DriverGuard AI, ${name}!`)
-    return true
   }
 
   /* ── Google login ──────────────────────────────────────── */
   const loginWithGoogle = async (): Promise<boolean> => {
-    setIsLoading(true)
-    await new Promise(r => setTimeout(r, 900))
-
-    const mockToken = 'google_oauth_token'
-    const googleUser: User = { ...MOCK_USER, name: 'Sarah Connor' }
-
-    setToken(mockToken)
-    setUser(googleUser)
-    localStorage.setItem(TOKEN_KEY, mockToken)
-    persistUser(googleUser)
-
-    setIsLoading(false)
-    toast.success('Authenticated via Google', `Welcome, ${googleUser.name}!`)
-    return true
+    // Navigate to backend Google OAuth endpoint - this will redirect to Google
+    const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+    window.location.href = `${backendUrl}/api/auth/google`
+    // Note: This function won't return as the page will redirect
+    // The callback is handled by handleGoogleCallback on the /auth page
+    return new Promise(() => {}) // Never resolves - page redirects
   }
 
   /* ── Forgot password ───────────────────────────────────── */
@@ -209,6 +280,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       signup,
       loginWithGoogle,
+      handleGoogleCallback,
       forgotPassword,
       logout,
       setAccountType,

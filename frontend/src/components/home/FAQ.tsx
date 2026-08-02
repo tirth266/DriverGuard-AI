@@ -42,7 +42,7 @@ function AccordionItem({ item, isOpen, onToggle }: {
         <span className="text-on-surface font-semibold text-[17px] leading-[1.4] pr-4 group-hover:text-primary transition-colors duration-200">
           {item.question}
         </span>
-        <span className="flex-shrink-0 w-8 h-8 rounded-lg bg-surface flex items-center justify-center border border-border group-hover:border-primary/40 transition-colors duration-200">
+        <span className="flex-shrink-0 w-8 h-8 rounded-lg bg-surface flex items-center justify-center border border-border group-hover:border-primary/40 group-hover:scale-105 transition-all duration-200">
           {isOpen ? (
             <Minus size={16} className="text-primary" />
           ) : (
@@ -56,7 +56,7 @@ function AccordionItem({ item, isOpen, onToggle }: {
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.3, ease: 'easeInOut' }}
+            transition={{ duration: 0.28, ease: 'easeInOut' }}
             className="overflow-hidden"
           >
             <p className="text-on-surface-variant text-body-md leading-[1.7] pb-5 px-1 pr-12">
@@ -84,16 +84,23 @@ const FAQ = memo(function FAQ() {
           subtitle="Everything you need to know about DriverGuard AI."
         />
 
-        <GlassCard className="max-w-3xl mx-auto rounded-2xl p-6 md:p-10 border border-border">
-          {FAQ_ITEMS.map((item, i) => (
-            <AccordionItem
-              key={item.question}
-              item={item}
-              isOpen={openIndex === i}
-              onToggle={() => setOpenIndex(openIndex === i ? null : i)}
-            />
-          ))}
-        </GlassCard>
+        <motion.div
+          initial={{ opacity: 0, y: 25 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.2 }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
+        >
+          <GlassCard className="max-w-3xl mx-auto rounded-2xl p-6 md:p-10 border border-border shadow-xl">
+            {FAQ_ITEMS.map((item, i) => (
+              <AccordionItem
+                key={item.question}
+                item={item}
+                isOpen={openIndex === i}
+                onToggle={() => setOpenIndex(openIndex === i ? null : i)}
+              />
+            ))}
+          </GlassCard>
+        </motion.div>
       </div>
     </section>
   )

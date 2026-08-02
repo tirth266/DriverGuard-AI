@@ -9,6 +9,7 @@ import {
   Gauge,
 } from 'lucide-react'
 import SectionTitle from '../shared/SectionTitle'
+import { use3DTilt } from '../../hooks/use3DTilt'
 
 const METRICS = [
   {
@@ -106,13 +107,42 @@ function AnimatedCounter({ value, suffix, duration = 1.5 }: { value: number; suf
   )
 }
 
-const cardVariants = {
-  hidden: { opacity: 0, y: 30 },
-  visible: (i: number) => ({
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.55, delay: i * 0.08, ease: 'easeOut' as const },
-  }),
+function MetricCard({ metric, index }: { metric: typeof METRICS[0]; index: number }) {
+  const Icon = metric.icon
+  const tilt = use3DTilt({ maxRotation: 6, scale: 1.03 })
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 25 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.15 }}
+      transition={{ duration: 0.4, delay: index * 0.07, ease: 'easeOut' }}
+    >
+      <div
+        ref={tilt.ref}
+        style={tilt.style}
+        onMouseMove={tilt.onMouseMove}
+        onMouseLeave={tilt.onMouseLeave}
+        className="h-full"
+      >
+        <div className="glass-card-hover rounded-2xl p-5 flex flex-col gap-3 border border-border cursor-pointer transition-shadow hover:shadow-xl h-full">
+          <div className={`w-10 h-10 rounded-xl ${metric.bgColor} border flex items-center justify-center`}>
+            <Icon size={18} className={metric.color} aria-hidden="true" />
+          </div>
+          <p className="text-[10px] font-bold text-on-surface-variant tracking-[0.06em] uppercase">
+            {metric.label}
+          </p>
+          {'displayValue' in metric && metric.displayValue ? (
+            <span className="font-metric text-[36px] md:text-[42px] leading-none tracking-[-0.01em] font-bold text-emerald-600 dark:text-emerald-400">
+              {metric.displayValue}
+            </span>
+          ) : (
+            <AnimatedCounter value={metric.value as number} suffix={(metric as any).suffix} />
+          )}
+        </div>
+      </div>
+    </motion.div>
+  )
 }
 
 const KPICards = memo(function KPICards() {
@@ -128,11 +158,11 @@ const KPICards = memo(function KPICards() {
           subtitle="See how fleet managers monitor safety in real time across all vehicles."
         />
 
-        <div className="glass-card rounded-3xl p-6 md:p-10 border border-border">
+        <div className="glass-card rounded-3xl p-6 md:p-10 border border-border shadow-xl">
           {/* Dashboard header */}
           <div className="flex items-center justify-between mb-8 pb-4 border-b border-border">
             <div className="flex items-center gap-3">
-              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 pulse-dot" />
+              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 pulse-dot shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
               <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 tracking-[0.08em] uppercase">
                 Fleet Monitoring — Live
               </span>
@@ -144,34 +174,9 @@ const KPICards = memo(function KPICards() {
 
           {/* Metric cards */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 md:gap-6">
-            {METRICS.map((m, i) => {
-              const Icon = m.icon
-              return (
-                <motion.div
-                  key={m.id}
-                  custom={i}
-                  variants={cardVariants}
-                  initial="hidden"
-                  whileInView="visible"
-                  viewport={{ once: true, margin: '-30px' }}
-                  className="glass-card-hover rounded-2xl p-5 flex flex-col gap-3 border border-border cursor-default"
-                >
-                  <div className={`w-10 h-10 rounded-xl ${m.bgColor} border flex items-center justify-center`}>
-                    <Icon size={18} className={m.color} aria-hidden="true" />
-                  </div>
-                  <p className="text-[10px] font-bold text-on-surface-variant tracking-[0.06em] uppercase">
-                    {m.label}
-                  </p>
-                  {'displayValue' in m && m.displayValue ? (
-                    <span className="font-metric text-[36px] md:text-[42px] leading-none tracking-[-0.01em] font-bold text-emerald-600 dark:text-emerald-400">
-                      {m.displayValue}
-                    </span>
-                  ) : (
-                    <AnimatedCounter value={m.value as number} suffix={(m as any).suffix} />
-                  )}
-                </motion.div>
-              )
-            })}
+            {METRICS.map((m, i) => (
+              <MetricCard key={m.id} metric={m} index={i} />
+            ))}
           </div>
         </div>
       </div>

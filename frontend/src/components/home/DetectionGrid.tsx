@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import SectionTitle from '../shared/SectionTitle'
 import GlassCard from '../shared/Card'
+import { use3DTilt } from '../../hooks/use3DTilt'
 
 const BENEFITS = [
   {
@@ -50,13 +51,38 @@ const BENEFITS = [
   },
 ]
 
-const cardVariants = {
-  hidden: { opacity: 0, y: 25 },
-  visible: (i: number) => ({
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.5, delay: i * 0.08, ease: 'easeOut' as const },
-  }),
+function BenefitCard({ benefit, index }: { benefit: typeof BENEFITS[0]; index: number }) {
+  const Icon = benefit.icon
+  const tilt = use3DTilt({ maxRotation: 5, scale: 1.02 })
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 25 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.15 }}
+      transition={{ duration: 0.4, delay: (index % 3) * 0.08, ease: 'easeOut' }}
+    >
+      <div
+        ref={tilt.ref}
+        style={tilt.style}
+        onMouseMove={tilt.onMouseMove}
+        onMouseLeave={tilt.onMouseLeave}
+        className="h-full"
+      >
+        <GlassCard className="glass-card-hover p-8 h-full flex flex-col gap-5 rounded-2xl group cursor-pointer transition-shadow hover:shadow-xl">
+          <div className={`w-14 h-14 rounded-2xl ${benefit.accent} border flex items-center justify-center group-hover:scale-110 transition-transform duration-300`}>
+            <Icon size={26} aria-hidden="true" />
+          </div>
+          <h3 className="font-headline-md text-[20px] leading-[1.3] font-semibold text-on-surface">
+            {benefit.title}
+          </h3>
+          <p className="text-on-surface-variant text-body-md leading-[1.6]">
+            {benefit.description}
+          </p>
+        </GlassCard>
+      </div>
+    </motion.div>
+  )
 }
 
 const DetectionGrid = memo(function DetectionGrid() {
@@ -73,34 +99,9 @@ const DetectionGrid = memo(function DetectionGrid() {
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {BENEFITS.map((benefit, i) => {
-          const Icon = benefit.icon
-          return (
-            <motion.div
-              key={benefit.title}
-              custom={i}
-              variants={cardVariants}
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, margin: '-40px' }}
-            >
-              <GlassCard className="glass-card-hover p-8 h-full flex flex-col gap-5 rounded-2xl group cursor-default">
-                <div className={`w-14 h-14 rounded-2xl ${benefit.accent} border flex items-center justify-center group-hover:scale-110 transition-transform duration-300`}>
-                  <Icon
-                    size={26}
-                    aria-hidden="true"
-                  />
-                </div>
-                <h3 className="font-headline-md text-[20px] leading-[1.3] font-semibold text-on-surface">
-                  {benefit.title}
-                </h3>
-                <p className="text-on-surface-variant text-body-md leading-[1.6]">
-                  {benefit.description}
-                </p>
-              </GlassCard>
-            </motion.div>
-          )
-        })}
+        {BENEFITS.map((benefit, i) => (
+          <BenefitCard key={benefit.title} benefit={benefit} index={i} />
+        ))}
       </div>
     </section>
   )

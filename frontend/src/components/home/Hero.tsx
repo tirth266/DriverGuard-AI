@@ -1,54 +1,57 @@
 import { memo } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { CheckCircle, XCircle, ShieldCheck } from 'lucide-react'
 import Button from '../shared/Button'
 import GlassCard from '../shared/Card'
+import { use3DTilt } from '../../hooks/use3DTilt'
 
-const HERO_IMAGE =
+const HERO_POSTER =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuCcKaLxmdIZwnR0lQmtyJqnulBLej0a0G8kFHVn1alPzu5Bih45tWBAph9k-Y_O-mDBiS96RZ6X6Pm6niij5B-CplXhXHUVFwTuaIm9ON1SnuBg7edeuTBmwyT-UrudvWqkJQYfwkRmLV4JkTFdmL0Za-_fIa5CC0_p2urfVKpFZ5yHicpcA_Xzpw1Baf5ENstaxctcRb9e5Ob1HFkQ9ZCUPonuqkQZT2f-2yawldUCYahojUrdLzzydNygLW_VYW37cVHmdtONPi4'
 
-const STATUS_ITEMS = [
-  { label: 'Driver Focused', status: true },
-  { label: 'Seat Belt', status: true },
-  { label: 'Phone Usage', status: false },
-  { label: 'Fatigue', status: false },
-  { label: 'Eyes on Road', status: true },
-]
-
 const Hero = memo(function Hero() {
+  const tiltProps = use3DTilt({ maxRotation: 5, scale: 1.01 })
+
   return (
     <section
       className="min-h-[80vh] flex items-center px-4 md:px-16 max-w-[1440px] mx-auto py-[100px] md:py-[120px] bg-background text-on-surface"
       aria-label="Hero section"
       id="solutions"
     >
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center w-full">
-        {/* Left: Text content */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center w-full">
+        
+        {/* Left: Staggered entrance content */}
         <motion.div
-          initial={{ opacity: 0, x: -40 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.7 }}
+          initial="hidden"
+          animate="visible"
+          variants={{
+            hidden: { opacity: 0 },
+            visible: {
+              opacity: 1,
+              transition: { staggerChildren: 0.12 },
+            },
+          }}
           className="space-y-8"
         >
-          {/* Live badge */}
+          {/* Badge */}
           <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.55 }}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-card border border-border shadow-sm"
+            variants={{
+              hidden: { opacity: 0, y: 20 },
+              visible: { opacity: 1, y: 0, transition: { duration: 0.45, ease: 'easeOut' } },
+            }}
+            className="inline-flex items-center gap-2.5 px-4 py-2 rounded-full bg-card border border-border shadow-sm hover:border-primary/30 transition-colors"
           >
-            <span className="w-2 h-2 rounded-full bg-emerald-500 pulse-dot block" />
-            <span className="font-label-caps text-label-caps text-primary tracking-[0.05em] uppercase font-semibold">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)] animate-pulse flex-shrink-0" />
+            <span className="font-label-caps text-label-caps text-primary tracking-[0.05em] uppercase font-semibold text-xs">
               Trusted AI Fleet Safety Platform
             </span>
           </motion.div>
 
           {/* Headline */}
           <motion.h1
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.55, delay: 0.1 }}
+            variants={{
+              hidden: { opacity: 0, y: 24 },
+              visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: 'easeOut' } },
+            }}
             className="font-display text-[40px] md:text-[54px] leading-[1.1] tracking-[-0.02em] font-extrabold text-on-surface"
           >
             Protect Every Journey <br />
@@ -57,9 +60,10 @@ const Hero = memo(function Hero() {
 
           {/* Description */}
           <motion.p
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.55, delay: 0.2 }}
+            variants={{
+              hidden: { opacity: 0, y: 24 },
+              visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: 'easeOut' } },
+            }}
             className="text-body-lg text-on-surface-variant max-w-lg leading-[1.7]"
           >
             DriverGuard AI helps fleets reduce accidents by detecting fatigue, phone usage,
@@ -69,9 +73,10 @@ const Hero = memo(function Hero() {
 
           {/* CTAs */}
           <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.55, delay: 0.3 }}
+            variants={{
+              hidden: { opacity: 0, y: 24 },
+              visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: 'easeOut' } },
+            }}
             className="flex gap-4 flex-wrap"
           >
             <Link to="/auth">
@@ -87,71 +92,60 @@ const Hero = memo(function Hero() {
           </motion.div>
         </motion.div>
 
-        {/* Right: Hero image with floating cards */}
+        {/* Right: Floating Card with 3D Tilt Cursor Interaction */}
         <motion.div
-          initial={{ opacity: 0, x: 40 }}
+          initial={{ opacity: 0, x: 30 }}
           animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.7, delay: 0.15 }}
+          transition={{ duration: 0.7, delay: 0.2 }}
           className="relative mt-8 md:mt-0"
         >
-          <GlassCard className="rounded-2xl overflow-hidden border border-border shadow-md bg-card">
-            <img
-              src={HERO_IMAGE}
-              alt="AI-powered driver monitoring system showing real-time safety analysis inside a vehicle cabin"
-              className="w-full aspect-video object-cover"
-              loading="eager"
-            />
-          </GlassCard>
-
-          {/* Floating LIVE STATUS card — top right */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.8, y: -10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            transition={{ delay: 0.6, duration: 0.5, type: 'spring' }}
-            className="absolute -top-4 -right-2 md:-right-4 bg-card p-4 rounded-xl shadow-lg border border-border"
-            aria-label="Live driver status"
+            animate={{ y: [0, -6, 0] }}
+            transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
           >
-            <div className="flex items-center gap-2 mb-3">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 pulse-dot block" />
-              <span className="font-label-caps text-[10px] text-emerald-600 dark:text-emerald-400 tracking-[0.08em] uppercase font-bold">
-                Live Status
-              </span>
-            </div>
-            <div className="space-y-1.5">
-              {STATUS_ITEMS.map((item) => (
-                <div key={item.label} className="flex items-center justify-between gap-4">
-                  <span className="text-[11px] text-on-surface-variant font-medium">{item.label}</span>
-                  {item.status ? (
-                    <CheckCircle size={14} className="text-emerald-500 flex-shrink-0" />
-                  ) : (
-                    <XCircle size={14} className="text-red-500 flex-shrink-0" />
-                  )}
-                </div>
-              ))}
-            </div>
-          </motion.div>
+            <div
+              ref={tiltProps.ref}
+              style={tiltProps.style}
+              onMouseMove={tiltProps.onMouseMove}
+              onMouseLeave={tiltProps.onMouseLeave}
+              className="cursor-pointer"
+            >
+              <GlassCard className="rounded-3xl overflow-hidden border border-border shadow-2xl bg-card relative group">
+                <video
+                  src="/driver-video.mp4"
+                  poster={HERO_POSTER}
+                  autoPlay
+                  muted
+                  loop
+                  playsInline
+                  className="w-full aspect-video object-cover"
+                  aria-label="AI-powered driver monitoring system showing real-time safety analysis inside a vehicle cabin"
+                />
 
-          {/* Floating Safety Score card — bottom left */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.8, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            transition={{ delay: 0.75, duration: 0.5, type: 'spring' }}
-            className="absolute -bottom-8 left-4 md:left-8 bg-card p-5 rounded-xl flex items-center gap-4 shadow-lg border border-border"
-            aria-label="Safety score"
-          >
-            <div className="h-12 w-12 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
-              <ShieldCheck className="text-primary" size={24} />
-            </div>
-            <div>
-              <span className="font-label-caps text-[10px] text-on-surface-variant tracking-[0.05em] uppercase block font-semibold">
-                Safety Score
-              </span>
-              <span className="font-metric text-[32px] leading-none tracking-[-0.01em] font-bold text-on-surface">
-                98<span className="text-primary text-[18px] font-medium">/100</span>
-              </span>
+                {/* Subtle animated scanning laser line */}
+                <motion.div
+                  className="absolute left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-primary/70 to-transparent pointer-events-none"
+                  animate={{ top: ['4%', '92%', '4%'] }}
+                  transition={{ duration: 6, repeat: Infinity, ease: 'linear' }}
+                />
+
+                {/* Minimal AI Bounding box on video */}
+                <svg
+                  className="absolute inset-0 w-full h-full pointer-events-none opacity-40 group-hover:opacity-80 transition-opacity"
+                  viewBox="0 0 500 350"
+                  preserveAspectRatio="none"
+                >
+                  <rect x="160" y="30" width="180" height="170" fill="none" stroke="currentColor" className="text-primary" strokeWidth="1" strokeDasharray="4,4" />
+                  <line x1="160" y1="30" x2="180" y2="30" stroke="currentColor" className="text-primary" strokeWidth="2" />
+                  <line x1="160" y1="30" x2="160" y2="50" stroke="currentColor" className="text-primary" strokeWidth="2" />
+                  <line x1="340" y1="30" x2="320" y2="30" stroke="currentColor" className="text-primary" strokeWidth="2" />
+                  <line x1="340" y1="30" x2="340" y2="50" stroke="currentColor" className="text-primary" strokeWidth="2" />
+                </svg>
+              </GlassCard>
             </div>
           </motion.div>
         </motion.div>
+
       </div>
     </section>
   )
