@@ -19,7 +19,8 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
-  const intervalRef = useRef<number | null>(null)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const isProcessingRef = useRef<boolean>(false)
 
   const [status, setStatus] = useState<'initializing' | 'active' | 'denied' | 'not_detected' | 'error'>('initializing')
   const [errorMessage, setErrorMessage] = useState<string>('')
@@ -53,12 +54,18 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
       streamRef.current = mediaStream
 
       if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream
-        // Ensure play is called
+        // Only set srcObject if it's different to avoid interrupting playback
+        if (videoRef.current.srcObject !== mediaStream) {
+          videoRef.current.srcObject = mediaStream
+        }
+        // Ensure play is called, but handle AbortError gracefully (expected during stream replacement)
         try {
           await videoRef.current.play()
-        } catch (playErr) {
-          console.warn('Video play auto-resume:', playErr)
+        } catch (playErr: any) {
+          if (playErr.name !== 'AbortError') {
+            console.warn('Video play error:', playErr)
+          }
+          // AbortError is expected when play() is interrupted by a new load request - ignore silently
         }
       }
 
@@ -92,13 +99,27 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
       }
       if (intervalRef.current) {
         clearInterval(intervalRef.current)
+        intervalRef.current = null
       }
+      isProcessingRef.current = false
     }
   }, [startCamera])
 
   // Process frames with Flask OpenCV backend
   useEffect(() => {
-    if (status !== 'active') return
+    if (status !== 'active') {
+      // Clear interval if status is not active
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+      isProcessingRef.current = false
+      return
+    }
+
+    // Prevent duplicate intervals
+    if (isProcessingRef.current) return
+    isProcessingRef.current = true
 
     const sendFrameToBackend = async () => {
       if (!videoRef.current || !canvasRef.current) return
@@ -121,7 +142,7 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
       const frameData = canvas.toDataURL('image/jpeg', 0.6)
 
       try {
-        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000'
+        const backendUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'
         const response = await fetch(`${backendUrl}/api/video/process_frame`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -163,7 +184,11 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
     intervalRef.current = window.setInterval(sendFrameToBackend, 150)
 
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+      isProcessingRef.current = false
     }
   }, [status, onTelemetryUpdate])
 

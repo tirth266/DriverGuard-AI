@@ -1,26 +1,49 @@
 import os
-from flask import Flask, jsonify
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
+
 from app.config import get_config
-from app.extensions import db, jwt, cors
-from app.auth import auth_bp
-from app.camera.routes import camera_bp
-from app.auth.controller import init_oauth
+from app.extensions import engine, Base
+from app.auth import auth_router
+from app.camera.routes import camera_router
 
-def create_app(config_class=None):
-    """Application factory for Flask app."""
-    app = Flask(__name__)
+logger = logging.getLogger(__name__)
 
-    # Load configuration
+
+def create_app(config_class=None) -> FastAPI:
+    """Application factory for FastAPI app."""
+
     if config_class is None:
         config_class = get_config()
-    app.config.from_object(config_class)
+    settings = config_class()
 
-    # Initialize extensions
-    db.init_app(app)
-    jwt.init_app(app)
-    
-    # Configure CORS for frontend
-    frontend_url = app.config.get('FRONTEND_URL', 'http://localhost:5173')
+    # ── Create all database tables on startup ─────────────────────────────
+    # Import models so Base knows about them before create_all
+    from app.models.user import User  # noqa: F401
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables created / verified.")
+        yield
+
+    app = FastAPI(
+        title="DriverGuard AI API",
+        lifespan=lifespan,
+    )
+
+    # ── Session Middleware (required for Google OAuth CSRF state) ─────────
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=settings.SECRET_KEY,
+    )
+
+    # ── CORS ──────────────────────────────────────────────────────────────
+    frontend_url = settings.FRONTEND_URL
     allowed_origins = [
         frontend_url,
         "http://localhost:5173",
@@ -28,41 +51,40 @@ def create_app(config_class=None):
         "http://localhost:5174",
         "http://127.0.0.1:5174",
     ]
-    cors.init_app(app, resources={r"/api/*": {"origins": allowed_origins}}, supports_credentials=True)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
-    # Initialize OAuth (Authlib)
-    init_oauth(app)
+    # ── Routers ───────────────────────────────────────────────────────────
+    app.include_router(auth_router)
+    app.include_router(camera_router)
 
-    # Register Blueprints
-    app.register_blueprint(auth_bp)
-    app.register_blueprint(camera_bp)
-
-    # Root endpoint - health check for API
-    @app.route('/', methods=['GET'])
+    # ── Root endpoint — health check ──────────────────────────────────────
+    @app.get('/')
     def root():
-        return jsonify({
+        return {
             'status': 'success',
             'message': 'Backend is running',
-            'service': 'DriverGuard AI Python Flask API',
-            'environment': app.config.get('FLASK_ENV', 'development')
-        }), 200
+            'service': 'DriverGuard AI Python FastAPI',
+            'environment': settings.APP_ENV,
+        }
 
-    # Favicon handler
-    @app.route('/favicon.ico', methods=['GET'])
+    # ── Favicon handler ───────────────────────────────────────────────────
+    @app.get('/favicon.ico', status_code=204)
     def favicon():
-        return '', 204
+        return None
 
-    # Health check endpoint
-    @app.route('/api/health', methods=['GET'])
+    # ── Health check endpoint ─────────────────────────────────────────────
+    @app.get('/api/health')
     def health_check():
-        return jsonify({
+        return {
             'status': 'online',
-            'service': 'DriverGuard AI Python Flask API',
-            'environment': app.config.get('FLASK_ENV', 'development')
-        }), 200
-
-    # Auto-create tables in development mode
-    with app.app_context():
-        db.create_all()
+            'service': 'DriverGuard AI Python FastAPI',
+            'environment': settings.APP_ENV,
+        }
 
     return app

@@ -5,15 +5,14 @@ load_dotenv()
 
 
 class Config:
-    # ── Flask ──────────────────────────────────────────────────────────────
+    # ── App ────────────────────────────────────────────────────────────────
     SECRET_KEY: str = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-prod")
-    FLASK_ENV: str = os.environ.get("FLASK_ENV", "development")
+    APP_ENV: str = os.environ.get("FLASK_ENV", "development")
 
     # ── Database ───────────────────────────────────────────────────────────
-    SQLALCHEMY_DATABASE_URI: str = os.environ.get(
+    DATABASE_URL: str = os.environ.get(
         "DATABASE_URL", "sqlite:///driverguard.db"
     )
-    SQLALCHEMY_TRACK_MODIFICATIONS: bool = False
 
     # ── JWT ────────────────────────────────────────────────────────────────
     JWT_SECRET_KEY: str = os.environ.get("JWT_SECRET", "jwt-secret-change-in-prod")
@@ -34,25 +33,13 @@ class Config:
         "https://accounts.google.com/.well-known/openid-configuration"
     )
 
-    # ── Session Cookie Settings (CSRF State Preservation) ───────────────────
-    SESSION_COOKIE_NAME: str = "driverguard_session"
-    SESSION_COOKIE_HTTPONLY: bool = True
-    SESSION_COOKIE_SAMESITE: str = "Lax"
-    PERMANENT_SESSION_LIFETIME: int = 3600  # 1 hour
-
 
 class DevelopmentConfig(Config):
     DEBUG: bool = True
-    # HTTP for localhost in development mode
-    SESSION_COOKIE_SECURE: bool = False
 
 
 class ProductionConfig(Config):
     DEBUG: bool = False
-    # Force HTTPS cookies in production
-    SESSION_COOKIE_SECURE: bool = True
-    SESSION_COOKIE_HTTPONLY: bool = True
-    SESSION_COOKIE_SAMESITE: str = "Lax"
 
 
 config_map = {

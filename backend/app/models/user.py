@@ -1,33 +1,44 @@
 from datetime import datetime, timezone
 import bcrypt
-from app.extensions import db
+from sqlalchemy import Integer, String, Boolean, Text, DateTime
+from sqlalchemy.orm import mapped_column, Mapped
+from typing import Optional
+from app.extensions import Base
 
-class User(db.Model):
+
+class User(Base):
     __tablename__ = 'users'
 
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(120), nullable=False)
-    display_name = db.Column(db.String(120), nullable=True)
-    email = db.Column(db.String(120), unique=True, nullable=False, index=True)
-    password_hash = db.Column(db.String(255), nullable=True) # Nullable for OAuth users
-    company = db.Column(db.String(120), nullable=True, default='')
-    role = db.Column(db.String(50), nullable=False, default='User')
-    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    display_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    email: Mapped[str] = mapped_column(String(120), unique=True, nullable=False, index=True)
+    password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Nullable for OAuth users
+    company: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, default='')
+    role: Mapped[str] = mapped_column(String(50), nullable=False, default='User')
+
     # OAuth & Profile enhancements
-    google_id = db.Column(db.String(255), unique=True, nullable=True, index=True)
-    provider = db.Column(db.String(50), nullable=False, default='local')
-    avatar = db.Column(db.Text, nullable=True, default='')
-    profile_picture = db.Column(db.Text, nullable=True, default='')
-    email_verified = db.Column(db.Boolean, nullable=False, default=False)
-    
+    google_id: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True, index=True)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False, default='local')
+    avatar: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default='')
+    profile_picture: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default='')
+    email_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     # Account status & metadata
-    account_type = db.Column(db.String(50), nullable=True, default=None)
-    is_first_login = db.Column(db.Boolean, nullable=False, default=True)
-    company_setup_complete = db.Column(db.Boolean, nullable=False, default=False)
-    last_login = db.Column(db.DateTime, nullable=True)
-    
-    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-    updated_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    account_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, default=None)
+    is_first_login: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    company_setup_complete: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    last_login: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
 
     def set_password(self, password: str) -> None:
         """Hashes password using bcrypt."""

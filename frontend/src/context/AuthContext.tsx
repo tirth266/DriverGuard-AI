@@ -131,7 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const isSelected = workspaceService.isWorkspaceSelected()
 
     try {
-      const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+      const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
       const res = await fetch(`${backendUrl}/api/auth/me`, {
         headers: { 'Authorization': `Bearer ${callbackToken}` }
       })
@@ -199,7 +199,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   /* ── Login ─────────────────────────────────────────────── */
   const login = async (email: string, _pass: string, rememberMe = true): Promise<boolean> => {
     setIsLoading(true)
-    const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+    const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
     const savedWorkspace = workspaceService.getWorkspacePreference()
     const isSelected = workspaceService.isWorkspaceSelected()
 
@@ -281,7 +281,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   /* ── Signup ────────────────────────────────────────────── */
   const signup = async (name: string, company: string, email: string, _pass: string, role: AccountType = 'personal'): Promise<boolean> => {
     setIsLoading(true)
-    const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+    const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
     
     try {
       const res = await fetch(`${backendUrl}/api/auth/register`, {
@@ -349,7 +349,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   /* ── Google login ──────────────────────────────────────── */
   const loginWithGoogle = async (): Promise<boolean> => {
-    const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+    const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
     window.location.href = `${backendUrl}/api/auth/google`
     return new Promise(() => {})
   }
