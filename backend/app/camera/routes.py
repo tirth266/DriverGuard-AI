@@ -5,6 +5,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from app.opencv.processor import opencv_processor
 from app.camera.service import camera_service, handle_video_stream
+from app.ai.yolo_service import yolo_service
+from app.config import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +19,7 @@ class FrameBody(BaseModel):
 
 @camera_router.post('/process_frame')
 async def process_frame(body: FrameBody):
-    """HTTP endpoint to process a live webcam frame with OpenCV."""
+    """HTTP endpoint to process a live webcam frame with YOLO11 AI."""
     try:
         frame_base64 = body.frame
 
@@ -33,12 +35,18 @@ async def process_frame(body: FrameBody):
 
 @camera_router.get('/status')
 async def camera_status():
-    """Returns camera & OpenCV processing status."""
+    """Returns camera, YOLO11 AI & OpenCV processing status."""
+    conf_threshold = get_config()().YOLO_CONFIDENCE_THRESHOLD
     return JSONResponse(
         {
             'status': 'online',
-            'opencv_active': True,
-            'processor': 'OpenCV HaarCascade AI',
+            'yolo_loaded': yolo_service.is_loaded,
+            'yolo_model_path': yolo_service.model_path,
+            'yolo_task': yolo_service.task,
+            'yolo_classes': yolo_service.classes,
+            'confidence_threshold': conf_threshold,
+            'device': yolo_service.device,
+            'processor': 'YOLO11 AI Classification' if yolo_service.is_loaded else 'OpenCV HaarCascade AI',
         },
         status_code=200,
     )

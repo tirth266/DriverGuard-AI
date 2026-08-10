@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { Radio, AlertTriangle, ShieldAlert, Camera, RefreshCw } from 'lucide-react'
+import { Radio, AlertTriangle, ShieldAlert, Camera, RefreshCw, Cpu } from 'lucide-react'
 
 interface WebcamFeedProps {
   onTelemetryUpdate?: (telemetry: {
@@ -10,6 +10,12 @@ interface WebcamFeedProps {
     seatbeltOk: boolean
     drowsiness: number
     faceDetected: boolean
+    status?: string
+    isDistracted?: boolean
+    topClass?: string
+    className?: string
+    confidence?: number
+    alerts?: string[]
   }) => void
   isRecording?: boolean
   className?: string
@@ -26,8 +32,12 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
   const [errorMessage, setErrorMessage] = useState<string>('')
   const [processedFrame, setProcessedFrame] = useState<string | null>(null)
   const [faceDetected, setFaceDetected] = useState<boolean>(true)
+  const [isDistracted, setIsDistracted] = useState<boolean>(false)
+  const [yoloClass, setYoloClass] = useState<string>('Safe Driving')
+  const [yoloConfidence, setYoloConfidence] = useState<number>(0.98)
   const [fps, setFps] = useState<number>(0)
   const lastFrameTimeRef = useRef<number>(Date.now())
+  const lastVoiceAlertTimeRef = useRef<number>(0)
 
   // Initialize browser webcam
   const startCamera = useCallback(async () => {
@@ -54,18 +64,15 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
       streamRef.current = mediaStream
 
       if (videoRef.current) {
-        // Only set srcObject if it's different to avoid interrupting playback
         if (videoRef.current.srcObject !== mediaStream) {
           videoRef.current.srcObject = mediaStream
         }
-        // Ensure play is called, but handle AbortError gracefully (expected during stream replacement)
         try {
           await videoRef.current.play()
         } catch (playErr: any) {
           if (playErr.name !== 'AbortError') {
             console.warn('Video play error:', playErr)
           }
-          // AbortError is expected when play() is interrupted by a new load request - ignore silently
         }
       }
 
@@ -93,7 +100,6 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
     startCamera()
 
     return () => {
-      // Cleanup stream tracks
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop())
       }
@@ -105,10 +111,9 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
     }
   }, [startCamera])
 
-  // Process frames with Flask OpenCV backend
+  // Process frames with YOLO11 / FastAPI backend
   useEffect(() => {
     if (status !== 'active') {
-      // Clear interval if status is not active
       if (intervalRef.current) {
         clearInterval(intervalRef.current)
         intervalRef.current = null
@@ -117,7 +122,6 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
       return
     }
 
-    // Prevent duplicate intervals
     if (isProcessingRef.current) return
     isProcessingRef.current = true
 
@@ -137,7 +141,6 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
       const ctx = canvas.getContext('2d')
       if (!ctx) return
 
-      // Draw current video frame onto offscreen canvas
       ctx.drawImage(video, 0, 0, w, h)
       const frameData = canvas.toDataURL('image/jpeg', 0.6)
 
@@ -155,6 +158,10 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
           if (resData.success && resData.processed_frame) {
             setProcessedFrame(resData.processed_frame)
             setFaceDetected(resData.face_detected !== false)
+            setIsDistracted(resData.is_distracted === true)
+
+            if (resData.class_name) setYoloClass(resData.class_name)
+            if (resData.confidence !== undefined) setYoloConfidence(resData.confidence)
 
             // Update FPS
             const now = Date.now()
@@ -162,25 +169,43 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
             if (delta > 0) setFps(Math.round(1 / delta))
             lastFrameTimeRef.current = now
 
+            // Voice Warning Audio Alert with 5s Cooldown
+            if (resData.is_distracted && resData.alerts && resData.alerts.length > 0) {
+              if (now - lastVoiceAlertTimeRef.current > 5000) {
+                lastVoiceAlertTimeRef.current = now
+                if ('speechSynthesis' in window) {
+                  const utterance = new SpeechSynthesisUtterance(resData.alerts[0])
+                  utterance.rate = 1.0
+                  utterance.volume = 0.9
+                  window.speechSynthesis.speak(utterance)
+                }
+              }
+            }
+
             // Update parent telemetry
             if (onTelemetryUpdate) {
               onTelemetryUpdate({
-                score: resData.score ?? 98,
+                score: resData.score ?? (resData.is_distracted ? 65 : 98),
                 eyesOnRoad: resData.eyes_on_road !== false,
                 phoneDetected: resData.phone_detected === true,
                 seatbeltOk: resData.seatbelt_ok !== false,
-                drowsiness: resData.drowsiness ?? 2,
+                drowsiness: resData.drowsiness ?? (resData.is_distracted ? 8 : 2),
                 faceDetected: resData.face_detected !== false,
+                status: resData.status ?? (resData.is_distracted ? 'distracted' : 'safe'),
+                isDistracted: resData.is_distracted === true,
+                topClass: resData.top_class ?? 'c0',
+                className: resData.class_name ?? 'Safe Driving',
+                confidence: resData.confidence ?? 0.98,
+                alerts: resData.alerts ?? [],
               })
             }
           }
         }
       } catch {
-        // Fallback: If backend is offline or loading, video element displays raw webcam feed cleanly
+        // Fallback: Display raw video if backend is loading
       }
     }
 
-    // Capture and send frame every 150ms (~6.6 FPS for smooth OpenCV telemetry)
     intervalRef.current = window.setInterval(sendFrameToBackend, 150)
 
     return () => {
@@ -208,11 +233,11 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
         }`}
       />
 
-      {/* Processed OpenCV overlay image if available */}
+      {/* Processed YOLO11 AI overlay image */}
       {status === 'active' && processedFrame && (
         <img
           src={processedFrame}
-          alt="OpenCV Live Processed Stream"
+          alt="YOLO11 AI Live Processed Stream"
           className="absolute inset-0 w-full h-full object-cover pointer-events-none z-10"
         />
       )}
@@ -220,25 +245,29 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
       {/* AI Scanning laser overlay */}
       {status === 'active' && (
         <motion.div
-          className="absolute left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-emerald-400/80 to-transparent pointer-events-none z-20"
+          className={`absolute left-0 right-0 h-0.5 pointer-events-none z-20 ${
+            isDistracted
+              ? 'bg-gradient-to-r from-transparent via-rose-500/90 to-transparent'
+              : 'bg-gradient-to-r from-transparent via-emerald-400/80 to-transparent'
+          }`}
           animate={{ top: ['3%', '94%', '3%'] }}
-          transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
+          transition={{ duration: 3.5, repeat: Infinity, ease: 'linear' }}
         />
       )}
 
       {/* Top HUD status badge */}
       {status === 'active' && (
-        <div className="absolute top-3 left-3 bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 text-white flex items-center gap-2 text-xs font-mono z-20 shadow-md">
-          <Radio size={13} className="text-emerald-400 animate-pulse" />
-          <span>OPENCV AI CABIN GUARD</span>
+        <div className="absolute top-3 left-3 bg-black/75 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 text-white flex items-center gap-2 text-xs font-mono z-20 shadow-md">
+          <Cpu size={14} className={isDistracted ? 'text-rose-500 animate-bounce' : 'text-emerald-400 animate-pulse'} />
+          <span className="font-extrabold">{isDistracted ? 'YOLO11 AI: DISTRACTION WARNING' : 'YOLO11 AI CABIN GUARD'}</span>
           {fps > 0 && <span className="text-[10px] text-emerald-400 font-bold">({fps} FPS)</span>}
         </div>
       )}
 
-      {/* Alert badge if face lost */}
-      {status === 'active' && !faceDetected && (
-        <div className="absolute top-3 right-3 bg-amber-500 text-black font-extrabold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 shadow-lg z-20 animate-pulse">
-          <ShieldAlert size={14} /> SEARCHING FOR DRIVER
+      {/* Alert badge if distraction detected */}
+      {status === 'active' && isDistracted && (
+        <div className="absolute top-3 right-3 bg-rose-600 text-white font-extrabold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1.5 shadow-lg z-20 animate-pulse border border-rose-400">
+          <ShieldAlert size={14} /> {yoloClass.toUpperCase()} ({Math.round(yoloConfidence * 100)}%)
         </div>
       )}
 

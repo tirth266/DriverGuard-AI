@@ -29,7 +29,16 @@ def create_app(config_class=None) -> FastAPI:
     async def lifespan(app: FastAPI):
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created / verified.")
+
+        # Load YOLO11 model ONCE at backend startup
+        try:
+            from app.ai.yolo_service import yolo_service
+            yolo_service.load_model(settings.YOLO_MODEL_PATH)
+        except Exception as e:
+            logger.error(f"[YOLO] Failed to initialize YOLO model on startup: {e}")
+
         yield
+
 
     app = FastAPI(
         title="DriverGuard AI API",

@@ -1,5 +1,11 @@
 # ===== Dataset & Large Files =====
 Data/
+backend/yolo11/dataset/
+yolo11_transfer/
+*.subset_5k/
+subset_5k.zip
+
+
 
 # ===== Python =====
 __pycache__/

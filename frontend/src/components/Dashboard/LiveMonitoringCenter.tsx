@@ -183,7 +183,14 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
     seatbeltOk: true,
     drowsiness: 2,
     faceDetected: true,
+    status: 'safe',
+    isDistracted: false,
+    topClass: 'c0',
+    className: 'Safe Driving',
+    confidence: 0.98,
+    alerts: [] as string[],
   })
+
 
   const activeDriver = FLEET_DRIVERS.find(d => d.id === selectedDriverId) || FLEET_DRIVERS[0]
 
@@ -480,6 +487,25 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
           {/* AI Detections List */}
           <div className="space-y-1.5 text-xs">
             <div className="flex items-center justify-between py-1 border-b border-border">
+              <span className="text-on-surface-variant text-[11px]">YOLO11 Model</span>
+              <span className="font-bold text-[11px] text-emerald-500 font-mono">yolo11n-cls.pt</span>
+            </div>
+
+            <div className="flex items-center justify-between py-1 border-b border-border">
+              <span className="text-on-surface-variant text-[11px]">YOLO Prediction</span>
+              <span className={`font-bold text-[11px] truncate max-w-[130px] ${liveTelemetry.isDistracted ? 'text-rose-500 font-extrabold' : 'text-emerald-500'}`}>
+                {liveTelemetry.className}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between py-1 border-b border-border">
+              <span className="text-on-surface-variant text-[11px]">AI Confidence</span>
+              <span className="font-bold text-[11px] text-primary font-mono">
+                {Math.round((liveTelemetry.confidence || 0.98) * 100)}%
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between py-1 border-b border-border">
               <span className="text-on-surface-variant text-[11px]">Seat Belt</span>
               <span className={`font-bold text-[11px] flex items-center gap-1 ${liveTelemetry.seatbeltOk ? 'text-emerald-500' : 'text-rose-500'}`}>
                 {liveTelemetry.seatbeltOk ? <CheckCircle2 size={12} /> : <ShieldAlert size={12} />}
@@ -492,13 +518,6 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
               <span className={`font-bold text-[11px] flex items-center gap-1 ${!liveTelemetry.phoneDetected ? 'text-emerald-500' : 'text-rose-500'}`}>
                 {!liveTelemetry.phoneDetected ? <CheckCircle2 size={12} /> : <Smartphone size={12} />}
                 {!liveTelemetry.phoneDetected ? 'NONE' : 'DETECTED'}
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between py-1 border-b border-border">
-              <span className="text-on-surface-variant text-[11px]">Smoking</span>
-              <span className={`font-bold text-[11px] flex items-center gap-1 text-emerald-500`}>
-                <CheckCircle2 size={12} /> NONE
               </span>
             </div>
 
@@ -520,6 +539,7 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
               </span>
             </div>
           </div>
+
 
           {/* Current Vehicle Details */}
           <div className="mt-auto p-2.5 rounded-xl bg-surface border border-border space-y-0.5 text-xs flex-shrink-0">
