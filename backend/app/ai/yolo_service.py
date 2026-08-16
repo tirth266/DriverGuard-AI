@@ -38,7 +38,7 @@ class YOLOAIService:
     def load_model(self, custom_path: Optional[str] = None) -> bool:
         """Loads the YOLO11 best.pt model once at startup using robust pathlib resolution."""
         try:
-            # 1. Resolve model candidate paths
+            # 1. Resolve model candidate paths in priority order
             base_dir = Path(__file__).resolve().parent.parent.parent  # backend/
             candidates = []
 
@@ -50,48 +50,70 @@ class YOLOAIService:
                 candidates.append(Path(env_path))
 
             candidates.extend([
-                base_dir / "models" / "trained" / "yolo11" / "best.pt",
-                base_dir / "models" / "trained" / "best.pt",
+                base_dir / "models" / "trained" / "yolo11" / "ddd_yolo11_full_best.pt",
             ])
-
-            resolved_path = None
-            for p in candidates:
-                if p.exists() and p.is_file():
-                    resolved_path = p.resolve()
-                    break
-
-            if not resolved_path:
-                err_msg = f"YOLO model not found at candidate locations: {[str(c) for c in candidates]}"
-                logger.error(f"[YOLO] {err_msg}")
-                print(f"[YOLO] ERROR: {err_msg}")
-                self.is_loaded = False
-                return False
-
-            self.model_path = str(resolved_path)
-            logger.info(f"[YOLO] Loading model from: {self.model_path}")
-            print(f"[YOLO] Loading model from: {self.model_path}")
 
             from ultralytics import YOLO
             import torch
 
-            # Determine device (CUDA GPU if available, else CPU)
+            # Determine device (CUDA GPU if available, else CPU fallback)
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
-            # Load model instance ONCE
-            self.model = YOLO(self.model_path)
-            self.task = getattr(self.model, "task", "classify")
-            self.classes = getattr(self.model, "names", {})
+            resolved_path = None
+            last_error = None
 
-            self.is_loaded = True
+            for p in candidates:
+                if not p.exists() or not p.is_file():
+                    continue
 
-            logger.info(f"[YOLO] Model loaded successfully on device: {self.device.upper()}")
-            logger.info(f"[YOLO] Model Task: {self.task}")
-            logger.info(f"[YOLO] Classes ({len(self.classes)}): {self.classes}")
+                candidate_path = str(p.resolve())
+                logger.info(f"[YOLO] Testing candidate model: {candidate_path}")
+                print(f"[YOLO] Testing candidate model: {candidate_path}")
 
-            print(f"[YOLO] Model loaded successfully on {self.device.upper()}")
-            print(f"[YOLO] Model Task: {self.task}")
-            print(f"[YOLO] Classes ({len(self.classes)}): {self.classes}")
-            return True
+                try:
+                    loaded_model = YOLO(candidate_path)
+                    model_task = getattr(loaded_model, "task", "classify")
+                    model_classes = getattr(loaded_model, "names", {})
+
+                    # ── Strict Validation Guards ──────────────────────────────
+                    if model_task != "classify":
+                        raise ValueError(f"Invalid model task '{model_task}' (expected 'classify')")
+
+                    if len(model_classes) == 1000:
+                        raise ValueError(
+                            f"ImageNet 1000-class base model detected in '{p.name}'. "
+                            "Expected the fine-tuned 10-class (c0-c9) DDD model."
+                        )
+
+                    if len(model_classes) != 10:
+                        raise ValueError(
+                            f"Invalid class count ({len(model_classes)}). Expected 10 classes (c0-c9)."
+                        )
+
+                    # Validation passed!
+                    self.model_path = candidate_path
+                    self.model = loaded_model
+                    self.task = model_task
+                    self.classes = model_classes
+                    self.is_loaded = True
+
+                    logger.info(f"[YOLO] Model loaded successfully from: {self.model_path}")
+                    logger.info(f"[YOLO] Device: {self.device.upper()} | Task: {self.task} | Classes: {len(self.classes)}")
+                    print(f"[YOLO] Model loaded successfully from: {self.model_path}")
+                    print(f"[YOLO] Device: {self.device.upper()} | Task: {self.task} | Classes ({len(self.classes)}): {self.classes}")
+                    return True
+
+                except Exception as candidate_err:
+                    last_error = candidate_err
+                    logger.warning(f"[YOLO] Candidate '{p.name}' rejected: {candidate_err}")
+                    print(f"[YOLO] Candidate '{p.name}' rejected: {candidate_err}")
+                    continue
+
+            err_msg = f"No valid 10-class DDD model could be loaded. Last error: {last_error}"
+            logger.error(f"[YOLO] {err_msg}")
+            print(f"[YOLO] ERROR: {err_msg}")
+            self.is_loaded = False
+            return False
 
         except Exception as e:
             logger.error(f"[YOLO] Failed to load model: {e}")

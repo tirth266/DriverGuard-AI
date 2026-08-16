@@ -54,12 +54,17 @@ def create_app(config_class=None) -> FastAPI:
     # ── CORS ──────────────────────────────────────────────────────────────
     frontend_url = settings.FRONTEND_URL
     allowed_origins = [
-        frontend_url,
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:5174",
         "http://127.0.0.1:5174",
+        "http://localhost:3000",
     ]
+    if frontend_url:
+        for url in frontend_url.split(","):
+            cleaned = url.strip()
+            if cleaned and cleaned not in allowed_origins:
+                allowed_origins.append(cleaned)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,

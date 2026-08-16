@@ -43,6 +43,7 @@ async def camera_status():
             'yolo_loaded': yolo_service.is_loaded,
             'yolo_model_path': yolo_service.model_path,
             'yolo_task': yolo_service.task,
+            'yolo_classes_count': len(yolo_service.classes) if yolo_service.classes else 0,
             'yolo_classes': yolo_service.classes,
             'confidence_threshold': conf_threshold,
             'device': yolo_service.device,

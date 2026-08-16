@@ -34,3 +34,6 @@ torch>=2.0.0
 
 # Form data / file upload support for FastAPI
 python-multipart==0.0.12
+
+# HTTPS Tunneling
+pyngrok>=7.0.0
