@@ -1,7 +1,7 @@
 import React, { memo } from 'react'
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'glass' | 'ghost' | 'outline'
+  variant?: 'primary' | 'secondary' | 'glass' | 'ghost' | 'outline' | 'danger'
   size?: 'sm' | 'md' | 'lg'
   children: React.ReactNode
   className?: string
@@ -15,25 +15,27 @@ const Button = memo(function Button({
   ...props
 }: ButtonProps) {
   const baseStyles =
-    'inline-flex items-center justify-center font-semibold rounded-xl transition-all duration-200 ease-out focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.03] hover:-translate-y-0.5 active:scale-[0.96] active:translate-y-0'
+    'inline-flex items-center justify-center font-medium rounded-[10px] transition-all duration-150 ease-out focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed select-none active:translate-y-0'
 
   const variantStyles = {
     primary:
-      'bg-primary text-white hover:bg-primary-hover shadow-sm hover:shadow-primary/25 hover:shadow-md border border-transparent',
+      'bg-primary text-white hover:bg-primary-hover shadow-xs border border-primary/20 hover:-translate-y-0.5 active:translate-y-0',
     secondary:
-      'bg-surface text-on-surface hover:bg-card border border-border shadow-xs hover:shadow-md',
+      'bg-surface text-on-surface hover:bg-surface-hover border border-border shadow-xs hover:-translate-y-0.5 active:translate-y-0',
     glass:
-      'glass-card text-on-surface hover:border-primary/40 border border-border shadow-xs hover:shadow-md',
+      'bg-surface/80 text-on-surface hover:bg-surface border border-border shadow-xs hover:-translate-y-0.5 active:translate-y-0',
     ghost:
-      'bg-transparent text-on-surface-variant hover:text-on-surface hover:bg-surface hover:scale-[1.02] hover:translate-y-0',
+      'bg-transparent text-on-surface-variant hover:text-on-surface hover:bg-surface/60',
     outline:
-      'bg-transparent text-primary hover:bg-primary/10 border border-primary hover:shadow-sm',
+      'bg-transparent text-primary hover:bg-primary/10 border border-primary/40',
+    danger:
+      'bg-rose-600 text-white hover:bg-rose-700 shadow-xs border border-rose-500/20 hover:-translate-y-0.5 active:translate-y-0',
   }
 
   const sizeStyles = {
-    sm: 'px-3.5 py-1.5 text-xs',
-    md: 'px-5 py-2.5 text-sm',
-    lg: 'px-7 py-3.5 text-base',
+    sm: 'px-3 py-1.5 text-xs tracking-tight',
+    md: 'px-4 py-2 text-sm tracking-tight',
+    lg: 'px-6 py-2.5 text-base tracking-tight font-semibold',
   }
 
   return (

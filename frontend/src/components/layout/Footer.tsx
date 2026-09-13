@@ -1,97 +1,84 @@
 import { memo } from 'react'
 import { Link } from 'react-router-dom'
-import { Shield, Globe, MessageCircle, Mail } from 'lucide-react'
+import { Shield } from 'lucide-react'
 
 const FOOTER_COLS = [
   {
-    title: 'Solutions',
+    title: 'Platform',
     links: [
-      { label: 'Fleet Safety', href: '#solutions' },
-      { label: 'Driver Monitoring', href: '#features' },
-      { label: 'Real-Time Alerts', href: '#how-it-works' },
+      { label: 'Computer Vision', href: '#cv-showcase' },
+      { label: 'Live Monitoring', href: '#solutions' },
+      { label: 'Fleet Telemetry', href: '#metrics' },
+      { label: 'Capabilities', href: '#features' },
     ],
   },
   {
-    title: 'Company',
+    title: 'Enterprise',
     links: [
-      { label: 'About Us', href: '#about' },
-      { label: 'Industries', href: '#industries' },
-      { label: 'Careers', href: '#' },
+      { label: 'Fleet Pricing', href: '#pricing' },
+      { label: 'Industries Served', href: '#industries' },
+      { label: 'Security & Compliance', href: '#about' },
     ],
   },
   {
     title: 'Support',
     links: [
-      { label: 'Help Center', href: '#' },
-      { label: 'Contact', href: '#contact' },
-      { label: 'Privacy Policy', href: '#' },
-      { label: 'Terms of Service', href: '#' },
+      { label: 'Documentation', href: '#' },
+      { label: 'API Reference', href: '#' },
+      { label: 'Status Console', href: '#' },
+      { label: 'Contact Support', href: '#' },
     ],
   },
 ]
 
-const Footer = memo(function Footer() {
+export default memo(function Footer() {
   return (
     <footer
-      className="bg-background py-16 border-t border-border transition-colors duration-300"
+      className="bg-[#070707] py-16 border-t border-border text-text-primary"
       role="contentinfo"
     >
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-10 px-4 md:px-16 max-w-[1440px] mx-auto">
-        {/* Brand column */}
-        <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-10 px-6 max-w-[1280px] mx-auto">
+        
+        {/* Brand column (2 cols) */}
+        <div className="md:col-span-2 space-y-4">
           <Link
             to="/"
-            className="flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
+            className="flex items-center gap-2.5 focus:outline-none"
             aria-label="DriverGuard AI Home"
           >
-            <div className="h-8 w-8 flex items-center justify-center rounded-lg bg-primary/10 border border-primary/20">
-              <Shield className="text-primary" size={18} aria-hidden="true" />
+            <div className="w-8 h-8 rounded-[8px] bg-brand/10 border border-brand/25 flex items-center justify-center">
+              <Shield className="text-brand w-4 h-4" aria-hidden="true" />
             </div>
-            <span className="font-display text-[24px] font-bold text-on-surface">
-              DriverGuard AI
+            <span className="font-display text-lg font-bold tracking-tight text-text-primary">
+              DriverGuard <span className="text-brand font-medium">AI</span>
             </span>
           </Link>
-          <p className="text-on-surface-variant text-body-md leading-[1.6]">
-            Intelligent Fleet Safety for Modern Enterprises.
+
+          <p className="text-text-secondary text-xs leading-[1.65] max-w-sm">
+            AI-powered driver safety, distraction detection, fatigue monitoring,
+            and commercial fleet safety intelligence.
           </p>
-          {/* Social links */}
-          <div className="flex gap-3">
-            <a
-              href="#"
-              className="text-on-surface-variant hover:text-primary transition-colors p-2 rounded-lg hover:bg-surface"
-              aria-label="Website"
-            >
-              <Globe size={18} aria-hidden="true" />
-            </a>
-            <a
-              href="#"
-              className="text-on-surface-variant hover:text-primary transition-colors p-2 rounded-lg hover:bg-surface"
-              aria-label="Chat"
-            >
-              <MessageCircle size={18} aria-hidden="true" />
-            </a>
-            <a
-              href="#"
-              className="text-on-surface-variant hover:text-primary transition-colors p-2 rounded-lg hover:bg-surface"
-              aria-label="Email"
-            >
-              <Mail size={18} aria-hidden="true" />
-            </a>
+
+          <div className="flex items-center gap-2 pt-1 text-text-muted">
+            <span className="w-1.5 h-1.5 rounded-full bg-safe animate-pulse" />
+            <span className="font-mono text-[11px] text-text-secondary">
+              All Systems Operational · Edge Inference Active
+            </span>
           </div>
         </div>
 
-        {/* Link columns */}
+        {/* Link columns (3 cols) */}
         {FOOTER_COLS.map((col) => (
           <div key={col.title}>
-            <h4 className="font-label-caps text-label-caps text-on-surface mb-5 tracking-[0.05em] uppercase font-bold">
+            <h4 className="font-mono text-[11px] text-text-muted mb-4 uppercase tracking-wider font-semibold">
               {col.title}
             </h4>
-            <ul className="space-y-3" role="list">
+            <ul className="space-y-2.5" role="list">
               {col.links.map((link) => (
                 <li key={link.label}>
                   <a
                     href={link.href}
-                    className="text-on-surface-variant hover:text-primary transition-colors text-[14px] leading-[1.6]"
+                    className="text-text-secondary hover:text-text-primary transition-colors text-xs"
                   >
                     {link.label}
                   </a>
@@ -102,14 +89,17 @@ const Footer = memo(function Footer() {
         ))}
       </div>
 
-      {/* Copyright */}
-      <div className="px-4 md:px-16 max-w-[1440px] mx-auto mt-14 pt-8 border-t border-border">
-        <p className="text-on-surface-variant text-[13px] text-center leading-[1.6]">
-          © {new Date().getFullYear()} DriverGuard AI. All rights reserved. Intelligent Fleet Safety Platform.
-        </p>
+      {/* System Status and Metadata Bar */}
+      <div className="px-6 max-w-[1280px] mx-auto mt-12 pt-6 border-t border-border/60 flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] font-mono text-text-muted">
+        <div>
+          © {new Date().getFullYear()} DriverGuard AI Technologies Inc. All rights reserved.
+        </div>
+        <div className="flex items-center gap-4">
+          <span>MODEL: YOLO11-EDGE</span>
+          <span>LATENCY: &lt;30MS</span>
+          <span>VERSION: 2.4.0</span>
+        </div>
       </div>
     </footer>
   )
 })
-
-export default Footer

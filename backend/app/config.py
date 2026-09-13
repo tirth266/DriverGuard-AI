@@ -33,10 +33,10 @@ class Config:
         "https://accounts.google.com/.well-known/openid-configuration"
     )
 
-    # ── YOLO11 AI Monitoring ──────────────────────────────────────────────
+    # ── YOLO11 AI Monitoring (Object Detection) ───────────────────────────
     YOLO_MODEL_PATH: str = os.environ.get(
         "YOLO_MODEL_PATH",
-        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "models", "trained", "yolo11", "ddd_yolo11_full_best.pt")
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "models", "trained", "yolo11", "detection", "best.pt")
     )
     YOLO_CONFIDENCE_THRESHOLD: float = float(os.environ.get("YOLO_CONFIDENCE_THRESHOLD", "0.40"))
 

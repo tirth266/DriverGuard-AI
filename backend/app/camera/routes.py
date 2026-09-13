@@ -47,7 +47,7 @@ async def camera_status():
             'yolo_classes': yolo_service.classes,
             'confidence_threshold': conf_threshold,
             'device': yolo_service.device,
-            'processor': 'YOLO11 AI Classification' if yolo_service.is_loaded else 'OpenCV HaarCascade AI',
+            'processor': 'YOLO11 AI Object Detection' if yolo_service.is_loaded else 'OpenCV HaarCascade AI',
         },
         status_code=200,
     )

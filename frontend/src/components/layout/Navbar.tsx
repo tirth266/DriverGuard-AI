@@ -1,5 +1,5 @@
 import { memo, useState, useRef, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Menu,
@@ -10,40 +10,34 @@ import {
   Settings,
   LogOut,
   ChevronDown,
-  LayoutDashboard,
   Building2,
-  Zap,
   Truck,
   CreditCard,
+  Radio,
 } from 'lucide-react'
 import { useScrollY } from '../../hooks/useScrollY'
 import { useAuth } from '../../context/AuthContext'
 import Button from '../shared/Button'
 import ThemeToggle from './ThemeToggle'
 
-/* ─── Public nav links (unauthenticated) ─────────────────── */
-const PUBLIC_LINKS = [
-  { label: 'Features',   href: '#features' },
-  { label: 'Industries', href: '#industries' },
-  { label: 'Pricing',    href: '#pricing' },
-  { label: 'About',      href: '#about' },
-  { label: 'Contact',    href: '#contact' },
-]
-
-const Navbar = memo(function Navbar() {
+export default memo(function Navbar() {
   const scrollY = useScrollY()
+  const location = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
-  const scrolled = scrollY > 20
+  const [unreadNotifications, setUnreadNotifications] = useState(2)
+  const scrolled = scrollY > 15
 
   const { user, isAuthenticated, logout } = useAuth()
   const navigate = useNavigate()
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   const accountType = user?.accountType ?? null
-  const isPersonal  = accountType === 'personal'
-  const isBusiness  = accountType === 'business'
+  const isBusiness = accountType === 'business'
+
+  const isMonitorPage = location.pathname.includes('/monitoring') || location.pathname.includes('/monitor')
+  const isDashboardPage = location.pathname === '/dashboard' || location.pathname.startsWith('/business/dashboard') || location.pathname.startsWith('/personal/dashboard') || location.pathname === '/fleet'
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -59,7 +53,12 @@ const Navbar = memo(function Navbar() {
   const handleAnchorClick = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
     if (href.startsWith('#')) {
       e.preventDefault()
-      document.querySelector(href)?.scrollIntoView({ behavior: 'smooth' })
+      if (location.pathname !== '/') {
+        navigate('/' + href)
+      } else {
+        const el = document.querySelector(href)
+        if (el) el.scrollIntoView({ behavior: 'smooth' })
+      }
       setMobileOpen(false)
     }
   }
@@ -78,124 +77,200 @@ const Navbar = memo(function Navbar() {
       : parts[0].substring(0, 2).toUpperCase()
   }
 
+  const overviewHref = isAuthenticated
+    ? (isBusiness ? '/business/dashboard' : '/personal/dashboard')
+    : '/'
+
+  const monitorHref = isAuthenticated
+    ? (isBusiness ? '/business/monitoring' : '/personal/monitoring')
+    : '/auth'
+
   return (
-    <motion.header
-      initial={{ opacity: 0, y: -16 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: 'easeOut' }}
-      className={`fixed top-0 w-full z-50 glass-header border-b transition-all duration-300 ${
-        scrolled ? 'shadow-md border-border bg-surface/90 backdrop-blur-md' : 'border-transparent shadow-none'
+    <header
+      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-200 ${
+        scrolled
+          ? 'bg-[#070707]/90 backdrop-blur-md border-b border-white/10 shadow-xs'
+          : 'bg-[#070707]/60 backdrop-blur-xs border-b border-white/5'
       }`}
       role="banner"
     >
-      <div className="flex justify-between items-center h-20 px-4 md:px-16 max-w-[1440px] mx-auto" ref={dropdownRef}>
+      <div className="max-w-[1280px] mx-auto h-[76px] px-6 flex items-center justify-between" ref={dropdownRef}>
 
-        {/* Logo with subtle hover scale */}
-        <Link to="/" className="flex items-center gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded group" aria-label="DriverGuard AI Home">
-          <div className="h-10 w-10 flex items-center justify-center rounded-xl bg-primary/10 border border-primary/20 group-hover:scale-105 group-hover:bg-primary/20 transition-all duration-200">
-            <Shield className="text-primary" size={22} />
+        {/* ── LEFT: Logo ── */}
+        <Link
+          to="/"
+          className="flex items-center gap-2.5 group focus:outline-none focus-visible:ring-2 focus-visible:ring-brand rounded-[8px]"
+          aria-label="DriverGuard AI Homepage"
+        >
+          <div className="w-8 h-8 rounded-[8px] bg-brand/10 border border-brand/25 flex items-center justify-center transition-colors group-hover:bg-brand/20">
+            <Shield className="text-brand w-4 h-4" />
           </div>
-          <span className="font-display text-headline-md text-on-surface font-extrabold tracking-tighter group-hover:text-primary transition-colors">
-            DriverGuard <span className="text-primary font-normal">AI</span>
+          <span className="font-display font-bold text-[17px] tracking-tight text-text-primary">
+            DriverGuard <span className="text-brand font-semibold">AI</span>
           </span>
         </Link>
 
-        {/* Desktop Nav */}
-        <nav className="hidden lg:flex gap-7 items-center" role="navigation" aria-label="Main navigation">
-          {!isAuthenticated && PUBLIC_LINKS.map(link => (
-            <a key={link.label} href={link.href}
-              onClick={e => handleAnchorClick(e, link.href)}
-              className="font-label-caps text-label-caps transition-all duration-200 tracking-[0.05em] uppercase text-on-surface-variant hover:text-primary hover:-translate-y-0.5 font-medium text-xs">
-              {link.label}
-            </a>
-          ))}
-
-          {/* Authenticated: Personal */}
-          {isAuthenticated && isPersonal && (
-            <Link to="/dashboard" className="text-xs font-semibold text-on-surface-variant hover:text-primary transition-all duration-200 hover:-translate-y-0.5 uppercase tracking-wider">
-              Dashboard
-            </Link>
-          )}
-
-          {/* Authenticated: Business */}
-          {isAuthenticated && isBusiness && (
+        {/* ── CENTER: Professional Navigation ── */}
+        <nav className="hidden md:flex items-center gap-1" role="navigation" aria-label="Main Navigation">
+          {isAuthenticated ? (
             <>
-              <Link to="/dashboard" className="text-xs font-semibold text-on-surface-variant hover:text-primary transition-all duration-200 hover:-translate-y-0.5 uppercase tracking-wider">
-                Dashboard
+              <Link
+                to={overviewHref}
+                className={`px-3 py-1.5 text-xs font-medium rounded-[8px] transition-colors ${
+                  isDashboardPage
+                    ? 'text-white bg-white/10'
+                    : 'text-text-secondary hover:text-white hover:bg-white/5'
+                }`}
+              >
+                Overview
               </Link>
-              <Link to="/fleet" className="text-xs font-semibold text-on-surface-variant hover:text-primary transition-all duration-200 hover:-translate-y-0.5 uppercase tracking-wider">
-                Fleet
+              <Link
+                to={monitorHref}
+                className={`px-3 py-1.5 text-xs font-medium rounded-[8px] transition-colors flex items-center gap-1.5 ${
+                  isMonitorPage
+                    ? 'text-white bg-white/10'
+                    : 'text-text-secondary hover:text-white hover:bg-white/5'
+                }`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-safe animate-pulse" />
+                Live Monitor
               </Link>
-              <Link to="/company-setup" className="text-xs font-semibold text-on-surface-variant hover:text-primary transition-all duration-200 hover:-translate-y-0.5 uppercase tracking-wider">
-                Company
+              <Link
+                to={isBusiness ? '/business/dashboard' : '/personal/ride-summary'}
+                className="px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-white hover:bg-white/5 rounded-[8px] transition-colors"
+              >
+                Analytics
               </Link>
-              <Link to="/enterprise" className="text-xs font-semibold text-on-surface-variant hover:text-primary transition-all duration-200 hover:-translate-y-0.5 uppercase tracking-wider">
-                Billing
+              {isBusiness ? (
+                <Link
+                  to="/business/drivers"
+                  className="px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-white hover:bg-white/5 rounded-[8px] transition-colors"
+                >
+                  Drivers
+                </Link>
+              ) : (
+                <Link
+                  to="/personal/profile"
+                  className="px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-white hover:bg-white/5 rounded-[8px] transition-colors"
+                >
+                  Driver Profile
+                </Link>
+              )}
+              <Link
+                to={isBusiness ? '/business/dashboard' : '/personal/dashboard'}
+                className="px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-white hover:bg-white/5 rounded-[8px] transition-colors"
+              >
+                Alerts
               </Link>
             </>
-          )}
-
-          {/* Authenticated: no accountType yet */}
-          {isAuthenticated && !accountType && (
-            <Link to="/onboarding" className="text-xs font-semibold text-primary uppercase tracking-wider">
-              Complete Setup
-            </Link>
+          ) : (
+            <>
+              <a
+                href="#top"
+                onClick={e => handleAnchorClick(e, '#top')}
+                className="px-3.5 py-1.5 text-xs font-medium text-text-secondary hover:text-white hover:bg-white/5 rounded-[8px] transition-colors"
+              >
+                Overview
+              </a>
+              <a
+                href="#solutions"
+                onClick={e => handleAnchorClick(e, '#solutions')}
+                className="px-3.5 py-1.5 text-xs font-medium text-text-secondary hover:text-white hover:bg-white/5 rounded-[8px] transition-colors"
+              >
+                Live Monitor
+              </a>
+              <a
+                href="#cv-showcase"
+                onClick={e => handleAnchorClick(e, '#cv-showcase')}
+                className="px-3.5 py-1.5 text-xs font-medium text-text-secondary hover:text-white hover:bg-white/5 rounded-[8px] transition-colors"
+              >
+                Computer Vision
+              </a>
+              <a
+                href="#metrics"
+                onClick={e => handleAnchorClick(e, '#metrics')}
+                className="px-3.5 py-1.5 text-xs font-medium text-text-secondary hover:text-white hover:bg-white/5 rounded-[8px] transition-colors"
+              >
+                Fleet Metrics
+              </a>
+              <a
+                href="#pricing"
+                onClick={e => handleAnchorClick(e, '#pricing')}
+                className="px-3.5 py-1.5 text-xs font-medium text-text-secondary hover:text-white hover:bg-white/5 rounded-[8px] transition-colors"
+              >
+                Enterprise
+              </a>
+            </>
           )}
         </nav>
 
-        {/* Desktop Right Controls */}
-        <div className="hidden lg:flex items-center gap-3">
+        {/* ── RIGHT: Controls & Profile ── */}
+        <div className="flex items-center gap-3">
           <ThemeToggle />
 
           {isAuthenticated && user ? (
-            <div className="flex items-center gap-3 pl-1 relative">
-              {/* Dashboard button */}
-              <Link to={isBusiness ? '/fleet' : '/dashboard'}>
-                <Button variant="primary" size="sm" className="flex items-center gap-1.5 shadow-sm hover:shadow-md">
-                  <LayoutDashboard size={14} />
-                  <span>{isBusiness ? 'Fleet Console' : 'Dashboard'}</span>
-                </Button>
-              </Link>
+            <div className="flex items-center gap-2.5">
+              {/* Meaningful Contextual Action (Live Monitor if not already on it) */}
+              {!isMonitorPage && (
+                <Link to={monitorHref} className="hidden sm:inline-flex">
+                  <Button variant="secondary" size="sm" className="gap-1.5 text-xs">
+                    <Radio size={13} className="text-brand" />
+                    <span>Live Monitor</span>
+                  </Button>
+                </Link>
+              )}
 
-              {/* Notifications */}
+              {/* Notifications with counter dot only when unread */}
               <div className="relative">
                 <button
-                  onClick={() => { setNotificationsOpen(!notificationsOpen); setProfileOpen(false) }}
-                  className="p-2 rounded-xl border border-border bg-card hover:bg-surface text-on-surface-variant hover:text-on-surface hover:scale-105 hover:-translate-y-0.5 transition-all relative"
+                  onClick={() => {
+                    setNotificationsOpen(!notificationsOpen)
+                    setProfileOpen(false)
+                  }}
+                  className="w-8 h-8 rounded-[8px] border border-border bg-surface hover:bg-surface-hover text-text-secondary hover:text-text-primary transition-colors flex items-center justify-center relative focus:outline-none"
                   aria-label="Notifications"
                 >
-                  <Bell size={18} />
-                  <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500 pulse-dot" />
+                  <Bell size={15} />
+                  {unreadNotifications > 0 && (
+                    <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-warning" />
+                  )}
                 </button>
+
                 <AnimatePresence>
                   {notificationsOpen && (
                     <motion.div
-                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      transition={{ duration: 0.18 }}
-                      className="absolute right-0 mt-3 w-80 bg-card border border-border rounded-2xl shadow-xl p-4 z-50"
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 6 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute right-0 mt-2 w-72 bg-surface border border-border rounded-[14px] shadow-2xl p-3 z-50"
                     >
-                      <div className="flex items-center justify-between border-b border-border pb-3 mb-3">
-                        <span className="text-xs font-bold uppercase tracking-wider text-on-surface">Notifications</span>
-                        <span className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-full font-semibold">2 New</span>
+                      <div className="flex items-center justify-between pb-2 mb-2 border-b border-border">
+                        <span className="text-xs font-semibold text-text-primary">Fleet Notifications</span>
+                        {unreadNotifications > 0 && (
+                          <button
+                            onClick={() => setUnreadNotifications(0)}
+                            className="text-[10px] text-brand hover:underline font-medium cursor-pointer"
+                          >
+                            Mark all read
+                          </button>
+                        )}
                       </div>
-                      <div className="space-y-3">
-                        <div className="flex items-start gap-2.5 p-2 rounded-lg hover:bg-surface transition-colors">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 flex-shrink-0" />
-                          <div>
-                            <p className="text-xs font-semibold text-on-surface">AI Monitoring Active</p>
-                            <p className="text-[11px] text-on-surface-variant">Live safety tracking is operational.</p>
-                            <span className="text-[9px] text-on-surface-variant opacity-75">2 mins ago</span>
+
+                      <div className="space-y-2">
+                        <div className="p-2 rounded-[8px] bg-card border border-border/60">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-semibold text-text-primary">AI Telemetry Active</span>
+                            <span className="text-[9px] text-text-muted">Just now</span>
                           </div>
+                          <p className="text-[11px] text-text-secondary mt-0.5">YOLO11 stream verified at 30 FPS.</p>
                         </div>
-                        <div className="flex items-start gap-2.5 p-2 rounded-lg hover:bg-surface transition-colors">
-                          <span className="w-2 h-2 rounded-full bg-amber-500 mt-1.5 flex-shrink-0" />
-                          <div>
-                            <p className="text-xs font-semibold text-on-surface">Fatigue Warning Resolved</p>
-                            <p className="text-[11px] text-on-surface-variant">Driver took a rest break.</p>
-                            <span className="text-[9px] text-on-surface-variant opacity-75">14 mins ago</span>
+                        <div className="p-2 rounded-[8px] bg-card border border-border/60">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-semibold text-warning">Rest Interval Recommended</span>
+                            <span className="text-[9px] text-text-muted">18m ago</span>
                           </div>
+                          <p className="text-[11px] text-text-secondary mt-0.5">Marcus Vance exceeded 4h continuous driving.</p>
                         </div>
                       </div>
                     </motion.div>
@@ -203,91 +278,86 @@ const Navbar = memo(function Navbar() {
                 </AnimatePresence>
               </div>
 
-              {/* Profile avatar */}
+              {/* Compact User Menu: [Avatar] Name ▾ */}
               <div className="relative">
                 <button
-                  onClick={() => { setProfileOpen(!profileOpen); setNotificationsOpen(false) }}
-                  className="flex items-center gap-2 p-1 pl-1.5 pr-2.5 rounded-full border border-border bg-card hover:bg-surface hover:scale-102 transition-all group"
+                  onClick={() => {
+                    setProfileOpen(!profileOpen)
+                    setNotificationsOpen(false)
+                  }}
+                  className="flex items-center gap-2 py-1 px-1.5 pr-2.5 rounded-[8px] border border-border bg-surface hover:bg-surface-hover text-text-primary transition-colors group focus:outline-none"
                   aria-expanded={profileOpen}
-                  aria-label="User menu"
+                  aria-label="User profile menu"
                 >
-                  {user.avatar ? (
-                    <img src={user.avatar} alt={user.name} className="w-8 h-8 rounded-full object-cover border border-primary/30" />
-                  ) : (
-                    <div className="w-8 h-8 rounded-full bg-primary text-white font-bold text-xs flex items-center justify-center">
-                      {getUserInitials()}
-                    </div>
-                  )}
-                  <span className="text-xs font-semibold text-on-surface max-w-[100px] truncate">{user.name}</span>
-                  <ChevronDown size={14} className="text-on-surface-variant group-hover:text-on-surface transition-colors" />
+                  <div className="w-6 h-6 rounded-full bg-brand/20 text-brand text-[11px] font-bold flex items-center justify-center border border-brand/30">
+                    {getUserInitials()}
+                  </div>
+                  <span className="text-xs font-medium text-text-primary max-w-[110px] truncate">{user.name}</span>
+                  <ChevronDown size={13} className="text-text-muted group-hover:text-text-primary transition-colors" />
                 </button>
 
                 <AnimatePresence>
                   {profileOpen && (
                     <motion.div
-                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      transition={{ duration: 0.18 }}
-                      className="absolute right-0 mt-3 w-64 bg-card border border-border rounded-2xl shadow-xl p-3 z-50 space-y-1"
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 6 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute right-0 mt-2 w-56 bg-surface border border-border rounded-[14px] shadow-2xl p-2 z-50 space-y-1"
                     >
-                      <div className="p-3 bg-surface rounded-xl border border-border/50 mb-2">
-                        <p className="text-xs font-bold text-on-surface truncate">{user.name}</p>
-                        <p className="text-[11px] text-on-surface-variant truncate">{user.email}</p>
-                        <div className="flex items-center gap-2 mt-1.5">
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
-                            {user.company}
-                          </span>
-                          {accountType && (
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
-                              isPersonal
-                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
-                                : 'bg-primary/10 text-primary border-primary/20'
-                            }`}>
-                              {isPersonal ? 'Personal' : 'Business'}
-                            </span>
-                          )}
-                        </div>
+                      <div className="px-3 py-2 border-b border-border mb-1">
+                        <p className="text-xs font-semibold text-text-primary truncate">{user.name}</p>
+                        <p className="text-[11px] text-text-muted truncate">{user.email}</p>
                       </div>
 
-                      <Link to="/profile" onClick={() => setProfileOpen(false)}
-                        className="flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface rounded-xl transition-colors">
-                        <UserIcon size={15} className="text-primary" /> Profile
+                      <Link
+                        to="/personal/profile"
+                        onClick={() => setProfileOpen(false)}
+                        className="flex items-center gap-2.5 px-3 py-2 text-xs text-text-secondary hover:text-text-primary hover:bg-white/5 rounded-[8px] transition-colors"
+                      >
+                        <UserIcon size={14} className="text-text-muted" /> Profile
                       </Link>
 
                       {isBusiness && (
                         <>
-                          <Link to="/fleet" onClick={() => setProfileOpen(false)}
-                            className="flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface rounded-xl transition-colors">
-                            <Truck size={15} className="text-primary" /> Fleet Management
+                          <Link
+                            to="/business/dashboard"
+                            onClick={() => setProfileOpen(false)}
+                            className="flex items-center gap-2.5 px-3 py-2 text-xs text-text-secondary hover:text-text-primary hover:bg-white/5 rounded-[8px] transition-colors"
+                          >
+                            <Truck size={14} className="text-text-muted" /> Fleet Management
                           </Link>
-                          <Link to="/company-setup" onClick={() => setProfileOpen(false)}
-                            className="flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface rounded-xl transition-colors">
-                            <Building2 size={15} className="text-primary" /> Company Profile
+                          <Link
+                            to="/business/company"
+                            onClick={() => setProfileOpen(false)}
+                            className="flex items-center gap-2.5 px-3 py-2 text-xs text-text-secondary hover:text-text-primary hover:bg-white/5 rounded-[8px] transition-colors"
+                          >
+                            <Building2 size={14} className="text-text-muted" /> Company Profile
                           </Link>
-                          <Link to="/enterprise" onClick={() => setProfileOpen(false)}
-                            className="flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface rounded-xl transition-colors">
-                            <CreditCard size={15} className="text-primary" /> Billing & Subscription
+                          <Link
+                            to="/business/billing"
+                            onClick={() => setProfileOpen(false)}
+                            className="flex items-center gap-2.5 px-3 py-2 text-xs text-text-secondary hover:text-text-primary hover:bg-white/5 rounded-[8px] transition-colors"
+                          >
+                            <CreditCard size={14} className="text-text-muted" /> Subscription
                           </Link>
                         </>
                       )}
 
-                      <Link to="/settings" onClick={() => setProfileOpen(false)}
-                        className="flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface rounded-xl transition-colors">
-                        <Settings size={15} className="text-primary" /> Settings
+                      <Link
+                        to="/personal/settings"
+                        onClick={() => setProfileOpen(false)}
+                        className="flex items-center gap-2.5 px-3 py-2 text-xs text-text-secondary hover:text-text-primary hover:bg-white/5 rounded-[8px] transition-colors"
+                      >
+                        <Settings size={14} className="text-text-muted" /> Settings
                       </Link>
 
-                      {isPersonal && (
-                        <Link to="/enterprise" onClick={() => setProfileOpen(false)}
-                          className="flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface rounded-xl transition-colors">
-                          <Zap size={15} className="text-primary" /> Upgrade to Business
-                        </Link>
-                      )}
-
                       <div className="border-t border-border pt-1 mt-1">
-                        <button onClick={handleLogout}
-                          className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-rose-500 hover:bg-rose-500/10 rounded-xl transition-colors text-left">
-                          <LogOut size={15} /> Logout
+                        <button
+                          onClick={handleLogout}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-danger hover:bg-danger/10 rounded-[8px] transition-colors text-left"
+                        >
+                          <LogOut size={14} /> Sign out
                         </button>
                       </div>
                     </motion.div>
@@ -296,111 +366,96 @@ const Navbar = memo(function Navbar() {
               </div>
             </div>
           ) : (
-            <>
-              <Link to="/enterprise">
-                <Button variant="glass" size="sm">Business Plans</Button>
+            <div className="flex items-center gap-2.5">
+              <Link to="/auth" className="hidden sm:inline-flex">
+                <Button variant="ghost" size="sm" className="text-xs">Sign In</Button>
               </Link>
               <Link to="/auth">
-                <Button variant="primary" size="md">Get Started Free</Button>
+                <Button variant="primary" size="sm" className="text-xs">Get Started Free</Button>
               </Link>
-            </>
+            </div>
           )}
-        </div>
 
-        {/* Mobile hamburger */}
-        <div className="flex items-center gap-2 lg:hidden">
-          <ThemeToggle />
+          {/* Mobile hamburger */}
           <button
-            className="text-on-surface-variant hover:text-on-surface transition-colors p-2 rounded-xl border border-border bg-card"
-            onClick={() => setMobileOpen(v => !v)}
+            className="md:hidden p-1.5 rounded-[8px] border border-border bg-surface text-text-secondary hover:text-text-primary"
+            onClick={() => setMobileOpen(!mobileOpen)}
             aria-expanded={mobileOpen}
-            aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
+            aria-label="Toggle navigation menu"
           >
-            {mobileOpen ? <X size={20} /> : <Menu size={20} />}
+            {mobileOpen ? <X size={18} /> : <Menu size={18} />}
           </button>
         </div>
+
       </div>
 
-      {/* Mobile Menu */}
+      {/* Mobile Drawer */}
       <AnimatePresence>
         {mobileOpen && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.25 }}
-            className="lg:hidden glass-header border-t border-border overflow-hidden"
+            className="md:hidden border-b border-border bg-[#070707] px-6 py-4 space-y-3"
           >
-            <nav className="flex flex-col px-6 py-4 gap-3" role="navigation" aria-label="Mobile navigation">
-              {!isAuthenticated && PUBLIC_LINKS.map(link => (
-                <a key={link.label} href={link.href}
-                  onClick={e => handleAnchorClick(e, link.href)}
-                  className="text-xs font-semibold text-on-surface-variant hover:text-primary transition-colors tracking-wider uppercase py-2 border-b border-border/50">
-                  {link.label}
-                </a>
-              ))}
-
-              {isAuthenticated && user ? (
-                <div className="pt-2 space-y-2">
-                  <div className="p-3 bg-surface rounded-xl border border-border">
-                    <p className="text-xs font-bold text-on-surface">{user.name}</p>
-                    <p className="text-[11px] text-on-surface-variant">{user.email}</p>
-                    {accountType && (
-                      <span className={`inline-block mt-1 text-[10px] font-bold px-2 py-0.5 rounded border ${
-                        isPersonal
-                          ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20'
-                          : 'bg-primary/10 text-primary border-primary/20'
-                      }`}>
-                        {isPersonal ? 'Personal (Free)' : 'Business'}
-                      </span>
-                    )}
-                  </div>
-                  
-                  <Link to="/dashboard" onClick={() => setMobileOpen(false)}>
-                    <Button variant="primary" size="md" className="w-full">Dashboard</Button>
-                  </Link>
-
-                  {isBusiness && (
-                    <>
-                      <Link to="/fleet" onClick={() => setMobileOpen(false)}>
-                        <Button variant="glass" size="sm" className="w-full">Fleet Management</Button>
-                      </Link>
-                      <Link to="/company-setup" onClick={() => setMobileOpen(false)}>
-                        <Button variant="glass" size="sm" className="w-full">Company Profile</Button>
-                      </Link>
-                      <Link to="/enterprise" onClick={() => setMobileOpen(false)}>
-                        <Button variant="glass" size="sm" className="w-full">Billing</Button>
-                      </Link>
-                    </>
-                  )}
-
-                  {isPersonal && (
-                    <Link to="/enterprise" onClick={() => setMobileOpen(false)}>
-                      <Button variant="glass" size="sm" className="w-full">Upgrade to Business</Button>
-                    </Link>
-                  )}
-
-                  <button onClick={() => { setMobileOpen(false); handleLogout() }}
-                    className="w-full py-2 text-xs font-bold text-rose-500 hover:underline text-center">
-                    Logout
-                  </button>
-                </div>
-              ) : (
-                <div className="pt-2 space-y-2">
-                  <Link to="/enterprise" onClick={() => setMobileOpen(false)}>
-                    <Button variant="glass" size="sm" className="w-full">Business Plans</Button>
-                  </Link>
-                  <Link to="/auth" onClick={() => setMobileOpen(false)}>
-                    <Button variant="primary" size="md" className="w-full">Get Started Free</Button>
-                  </Link>
-                </div>
-              )}
+            <nav className="flex flex-col gap-2">
+              <Link
+                to={overviewHref}
+                onClick={() => setMobileOpen(false)}
+                className="py-2 text-sm text-text-secondary hover:text-white border-b border-border/40"
+              >
+                Overview
+              </Link>
+              <Link
+                to={monitorHref}
+                onClick={() => setMobileOpen(false)}
+                className="py-2 text-sm text-text-secondary hover:text-white border-b border-border/40 flex items-center justify-between"
+              >
+                <span>Live Monitor</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-safe" />
+              </Link>
+              <a
+                href="#cv-showcase"
+                onClick={e => handleAnchorClick(e, '#cv-showcase')}
+                className="py-2 text-sm text-text-secondary hover:text-white border-b border-border/40"
+              >
+                Computer Vision
+              </a>
+              <a
+                href="#metrics"
+                onClick={e => handleAnchorClick(e, '#metrics')}
+                className="py-2 text-sm text-text-secondary hover:text-white border-b border-border/40"
+              >
+                Fleet Metrics
+              </a>
+              <a
+                href="#pricing"
+                onClick={e => handleAnchorClick(e, '#pricing')}
+                className="py-2 text-sm text-text-secondary hover:text-white border-b border-border/40"
+              >
+                Pricing
+              </a>
             </nav>
+
+            <div className="pt-2">
+              {isAuthenticated ? (
+                <button
+                  onClick={() => { setMobileOpen(false); handleLogout() }}
+                  className="w-full py-2 text-xs font-semibold text-danger text-center"
+                >
+                  Sign Out
+                </button>
+              ) : (
+                <Link to="/auth" onClick={() => setMobileOpen(false)}>
+                  <Button variant="primary" size="md" className="w-full text-xs">
+                    Start Free Trial
+                  </Button>
+                </Link>
+              )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.header>
+    </header>
   )
 })
-
-export default Navbar

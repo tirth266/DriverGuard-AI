@@ -3,115 +3,130 @@ import { motion } from 'framer-motion'
 import {
   Moon,
   Smartphone,
-  Cigarette,
+  Scan,
   ShieldCheck,
-  ScanFace,
+  Eye,
   Volume2,
   LayoutDashboard,
   FileText,
-  BellRing,
+  Activity,
 } from 'lucide-react'
-import GlassCard from '../shared/Card'
 import SectionTitle from '../shared/SectionTitle'
-import { use3DTilt } from '../../hooks/use3DTilt'
 
 const FEATURES = [
   {
+    icon: Scan,
+    title: 'YOLO11 Object Detection',
+    description: 'Pinpoints physical cabin objects in real time — mobile phones, seatbelts, passengers — with high-precision bounding boxes.',
+    tag: 'CV ENGINE',
+  },
+  {
     icon: Moon,
     title: 'Driver Fatigue Detection',
-    description: 'Detects signs of drowsiness before accidents happen, keeping drivers alert on every journey.',
+    description: 'Detects micro-sleeps and continuous eye closure before accidents happen, keeping drivers alert on long routes.',
+    tag: 'DROWSINESS',
   },
   {
     icon: Smartphone,
-    title: 'Phone Usage Detection',
-    description: 'Alerts when drivers use mobile devices while operating vehicles, reducing distraction risks.',
+    title: 'Distracted Driving Alerts',
+    description: 'Identifies texting, prolonged glances away from the road, and handheld mobile device usage in milliseconds.',
+    tag: 'DISTRACTION',
   },
   {
-    icon: Cigarette,
-    title: 'Smoking Detection',
-    description: 'Monitors smoking inside vehicles to enforce safety policies and maintain fleet standards.',
-  },
-  {
-    icon: ShieldCheck,
-    title: 'Seat Belt Compliance',
-    description: 'Ensures all drivers comply with seat belt policies, protecting your team and reducing liability.',
-  },
-  {
-    icon: ScanFace,
-    title: 'Driver Attention Monitoring',
-    description: 'Tracks eye and head movement patterns to detect inattentive driving before it becomes dangerous.',
+    icon: Eye,
+    title: 'Gaze & Attention Tracking',
+    description: 'Tracks eye orientation and head pose disengagement to recognize distracted drivers before dangerous events escalate.',
+    tag: 'ATTENTION',
   },
   {
     icon: Volume2,
-    title: 'Real-Time Voice Alerts',
-    description: 'Warns drivers instantly with voice alerts before dangerous situations escalate.',
+    title: 'Instant Voice Interventions',
+    description: 'Dispatches synthesized voice alerts directly into the cabin to immediately refocus inattentive drivers.',
+    tag: 'IN-CABIN AUDIO',
+  },
+  {
+    icon: ShieldCheck,
+    title: 'Seatbelt Compliance',
+    description: 'Verifies safety restraint compliance throughout the trip, ensuring driver safety and reducing fleet liability.',
+    tag: 'COMPLIANCE',
   },
   {
     icon: LayoutDashboard,
-    title: 'Fleet Dashboard',
-    description: 'Monitor all vehicles from one centralized dashboard with live safety status and insights.',
+    title: 'Centralized Fleet Telemetry',
+    description: 'Monitor active vehicles simultaneously with real-time safety scores, vehicle status, and live cabin camera feeds.',
+    tag: 'DISPATCH',
+  },
+  {
+    icon: Activity,
+    title: 'Dynamic Safety Scoring',
+    description: 'Calculates real-time 0-100 safety grades per driver and trip, driving performance improvement and lowering insurance costs.',
+    tag: 'ANALYTICS',
   },
   {
     icon: FileText,
-    title: 'Incident Reports',
-    description: 'Automatic reports and event history for compliance, training, and insurance documentation.',
-  },
-  {
-    icon: BellRing,
-    title: 'Live Notifications',
-    description: 'Receive instant alerts on your phone or dashboard when safety events are detected.',
+    title: 'Automated Incident Audit',
+    description: 'Generates detailed incident logs with verified timestamps and event severity for insurance and compliance reports.',
+    tag: 'AUDITING',
   },
 ]
 
 function FeatureCard({ feature, index }: { feature: typeof FEATURES[0]; index: number }) {
   const Icon = feature.icon
-  const tilt = use3DTilt({ maxRotation: 5, scale: 1.02 })
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 25 }}
+      initial={{ opacity: 0, y: 20 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.15 }}
-      transition={{ duration: 0.4, delay: (index % 3) * 0.08, ease: 'easeOut' }}
+      transition={{
+        duration: 0.4,
+        delay: (index % 3) * 0.08,
+        ease: 'easeOut',
+      }}
+      className="h-full"
     >
-      <div
-        ref={tilt.ref}
-        style={tilt.style}
-        onMouseMove={tilt.onMouseMove}
-        onMouseLeave={tilt.onMouseLeave}
-        className="h-full"
-      >
-        <GlassCard className="glass-card-hover p-8 h-full flex flex-col gap-4 rounded-2xl group cursor-pointer transition-shadow hover:shadow-xl">
-          <div className="w-12 h-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-colors duration-300">
-            <Icon
-              size={24}
-              className="text-primary group-hover:text-white transition-all duration-300 group-hover:scale-110"
-              aria-hidden="true"
-            />
+      <div className="p-7 h-full flex flex-col justify-between rounded-[16px] border border-white/10 bg-surface hover:border-white/20 transition-all duration-200 group">
+        <div>
+          <div className="flex items-center justify-between mb-5">
+            <div className="w-10 h-10 rounded-[10px] bg-brand/10 border border-brand/20 flex items-center justify-center text-brand transition-colors">
+              <Icon size={18} aria-hidden="true" />
+            </div>
+            <span className="text-[10px] font-mono font-semibold tracking-wider uppercase px-2 py-0.5 rounded-[4px] bg-card border border-border text-text-muted">
+              {feature.tag}
+            </span>
           </div>
-          <h3 className="font-headline-md text-[20px] leading-[1.3] font-semibold text-on-surface">
+
+          <h3 className="font-display text-base font-bold text-text-primary mb-2 tracking-tight">
             {feature.title}
           </h3>
-          <p className="text-on-surface-variant text-body-md leading-[1.6]">
+
+          <p className="text-text-secondary text-xs leading-[1.65]">
             {feature.description}
           </p>
-        </GlassCard>
+        </div>
+
+        <div className="mt-5 pt-3.5 border-t border-border/60 flex items-center gap-1 text-[11px] font-medium text-text-muted group-hover:text-text-primary transition-colors">
+          <span>Technical specifications</span>
+          <span className="transition-transform group-hover:translate-x-0.5">→</span>
+        </div>
       </div>
     </motion.div>
   )
 }
 
-const Features = memo(function Features() {
+export default memo(function Features() {
   return (
     <section
-      className="px-4 md:px-16 max-w-[1440px] mx-auto py-[100px] bg-background"
-      aria-label="Features section"
+      className="px-6 max-w-[1280px] mx-auto py-20 md:py-28"
+      aria-label="Platform features"
       id="features"
     >
       <SectionTitle
-        badge="Features"
-        title="Everything You Need for Fleet Safety"
-        subtitle="Advanced AI-powered monitoring capabilities designed to protect your drivers and reduce fleet risk."
+        badge="Platform Capabilities"
+        title="Engineered for Fleet Safety"
+        subtitle="End-to-end computer vision and real-time telemetry designed for enterprise transport."
+        centered
+        className="mb-12"
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -122,5 +137,3 @@ const Features = memo(function Features() {
     </section>
   )
 })
-
-export default Features

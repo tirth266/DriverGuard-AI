@@ -488,11 +488,11 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
           <div className="space-y-1.5 text-xs">
             <div className="flex items-center justify-between py-1 border-b border-border">
               <span className="text-on-surface-variant text-[11px]">YOLO11 Model</span>
-              <span className="font-bold text-[11px] text-emerald-500 font-mono">yolo11n-cls.pt</span>
+              <span className="font-bold text-[11px] text-emerald-500 font-mono">yolo11n.pt (detect)</span>
             </div>
 
             <div className="flex items-center justify-between py-1 border-b border-border">
-              <span className="text-on-surface-variant text-[11px]">YOLO Prediction</span>
+              <span className="text-on-surface-variant text-[11px]">YOLO Detection</span>
               <span className={`font-bold text-[11px] truncate max-w-[130px] ${liveTelemetry.isDistracted ? 'text-rose-500 font-extrabold' : 'text-emerald-500'}`}>
                 {liveTelemetry.className}
               </span>

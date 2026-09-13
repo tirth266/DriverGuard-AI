@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { Radio, AlertTriangle, ShieldAlert, Camera, RefreshCw, Cpu } from 'lucide-react'
+import { AlertTriangle, ShieldAlert, Camera, RefreshCw, Cpu } from 'lucide-react'
 
 interface WebcamFeedProps {
   onTelemetryUpdate?: (telemetry: {
@@ -15,6 +15,8 @@ interface WebcamFeedProps {
     topClass?: string
     className?: string
     confidence?: number
+    detections?: any[]
+    detectionCount?: number
     alerts?: string[]
   }) => void
   isRecording?: boolean
@@ -31,10 +33,11 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
   const [status, setStatus] = useState<'initializing' | 'active' | 'denied' | 'not_detected' | 'error'>('initializing')
   const [errorMessage, setErrorMessage] = useState<string>('')
   const [processedFrame, setProcessedFrame] = useState<string | null>(null)
-  const [faceDetected, setFaceDetected] = useState<boolean>(true)
+  const [_faceDetected, setFaceDetected] = useState<boolean>(true)
   const [isDistracted, setIsDistracted] = useState<boolean>(false)
   const [yoloClass, setYoloClass] = useState<string>('Safe Driving')
   const [yoloConfidence, setYoloConfidence] = useState<number>(0.98)
+  const [detections, setDetections] = useState<any[]>([])
   const [fps, setFps] = useState<number>(0)
   const lastFrameTimeRef = useRef<number>(Date.now())
   const lastVoiceAlertTimeRef = useRef<number>(0)
@@ -160,6 +163,9 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
             setFaceDetected(resData.face_detected !== false)
             setIsDistracted(resData.is_distracted === true)
 
+            const rawDets = resData.detections || []
+            setDetections(rawDets)
+
             if (resData.class_name) setYoloClass(resData.class_name)
             if (resData.confidence !== undefined) setYoloConfidence(resData.confidence)
 
@@ -193,9 +199,11 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
                 faceDetected: resData.face_detected !== false,
                 status: resData.status ?? (resData.is_distracted ? 'distracted' : 'safe'),
                 isDistracted: resData.is_distracted === true,
-                topClass: resData.top_class ?? 'c0',
+                topClass: resData.top_class ?? 'cabin_safe',
                 className: resData.class_name ?? 'Safe Driving',
                 confidence: resData.confidence ?? 0.98,
+                detections: rawDets,
+                detectionCount: rawDets.length,
                 alerts: resData.alerts ?? [],
               })
             }
@@ -259,7 +267,9 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
       {status === 'active' && (
         <div className="absolute top-3 left-3 bg-black/75 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 text-white flex items-center gap-2 text-xs font-mono z-20 shadow-md">
           <Cpu size={14} className={isDistracted ? 'text-rose-500 animate-bounce' : 'text-emerald-400 animate-pulse'} />
-          <span className="font-extrabold">{isDistracted ? 'YOLO11 AI: DISTRACTION WARNING' : 'YOLO11 AI CABIN GUARD'}</span>
+          <span className="font-extrabold">
+            {isDistracted ? 'YOLO11 AI: DISTRACTION DETECTED' : `YOLO11 DETECTION (${detections.length} OBJ)`}
+          </span>
           {fps > 0 && <span className="text-[10px] text-emerald-400 font-bold">({fps} FPS)</span>}
         </div>
       )}

@@ -1,0 +1,26 @@
+# ==============================================================================
+# DriverGuard-AI: YOLO11 Object Detection Dataset Configuration
+#
+# NOTE: This configuration requires a standard YOLO object detection dataset
+# with images/ and matching bounding-box labels/ (normalized YOLO format:
+# <class_id> <x_center> <y_center> <width> <height>).
+#
+# The original Kaggle c0-c9 dataset is classification-only and cannot be used
+# here directly until real bounding-box annotations are generated or provided.
+# ==============================================================================
+
+# Root directory of the dataset (override via CLI or edit here)
+path: ../dataset
+
+# Relative paths to train, val, and test splits
+train: images/train
+val: images/val
+test: images/test
+
+# Target cabin physical object detection classes
+names:
+  0: person
+  1: mobile_phone
+  2: bottle_cup
+  3: steering_wheel
+  4: seatbelt
