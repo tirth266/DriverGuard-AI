@@ -28,6 +28,20 @@ interface WebcamFeedProps {
     latencyMs: number | null
     lastSuccessfulFrameAt: number | null
     processingError: string | null
+    mediapipe: {
+      available: boolean
+      reason?: string
+      face_detected: boolean
+      eye_state: string
+      eye_measurement: number | null
+      drowsiness_event: boolean
+      yawn_detected: boolean
+      mouth_measurement: number | null
+      head_pose: string
+      hands_detected: boolean
+      hand_count: number
+      hand_landmarks_available: boolean
+    } | null
     sessionSummary?: {
       current_safety_score: number
       lowest_session_score: number
@@ -110,6 +124,16 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
       return
     }
 
+    // Release any previously held camera tracks before re-requesting.
+    // This prevents NotReadableError on component remount or retry.
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop())
+      streamRef.current = null
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null
+    }
+
     try {
       const constraints: MediaStreamConstraints = {
         video: {
@@ -177,6 +201,25 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
           detectionState: 'camera_unavailable',
           processingError: 'No camera was detected. Connect a webcam and retry.',
         })
+      } else if (
+        errName === 'NotReadableError' ||
+        errName === 'TrackStartError' ||
+        errStr.toLowerCase().includes('in use') ||
+        errStr.toLowerCase().includes('device in use')
+      ) {
+        setStatus('error')
+        setErrorMessage(
+          'Camera is already in use by another application or browser tab. ' +
+          'Please close other apps using the camera (e.g. Teams, Zoom, other tabs) and click Retry.'
+        )
+        setProcessingState('error')
+        publishObservability({
+          cameraState: 'error',
+          processingState: 'error',
+          detectionState: 'camera_unavailable',
+          processingError:
+            'Camera is in use by another app. Close other camera apps and retry.',
+        })
       } else {
         setStatus('error')
         setErrorMessage(errStr || 'Failed to initialize live camera stream.')
@@ -190,6 +233,7 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
       }
     }
   }, [publishObservability])
+
 
   // Start webcam on mount
   useEffect(() => {
@@ -340,6 +384,7 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
                 detections: rawDets,
                 detectionCount: rawDets.length,
                 alerts: resData.alerts ?? [],
+                mediapipe: resData.mediapipe ?? null,
                 sessionSummary: resData.session_summary ?? null,
               })
             }

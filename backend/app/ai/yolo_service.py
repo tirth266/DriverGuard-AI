@@ -63,7 +63,7 @@ class YOLOAIService:
                 "start_time": round(ev["start_time"], 2),
                 "end_time": round(ev["end_time"], 2),
                 "duration": round(max(0.0, ev["end_time"] - ev["start_time"]), 2),
-                "max_confidence": round(ev["max_confidence"], 4),
+                "max_confidence": round(ev["max_confidence"], 4) if ev["max_confidence"] is not None else None,
                 "min_score": int(ev["min_score"]),
             })
 
@@ -83,13 +83,27 @@ class YOLOAIService:
             "events": all_events,
         }
 
+    # Event types owned by each domain so updates don't cancel the other domain's events
+    _YOLO_EVENT_TYPES: frozenset = frozenset({"cell phone", "bottle", "cup"})
+    _MEDIAPIPE_EVENT_TYPES: frozenset = frozenset({
+        "prolonged_eye_closure", "yawning",
+        "head_pose_left", "head_pose_right", "head_pose_down",
+    })
+
     def _update_session_events(
         self,
-        active_detections: Dict[str, float],
+        active_detections: Dict[str, Optional[float]],
         score: int,
         current_time: float,
+        owned_types: Optional[frozenset] = None,
     ) -> None:
-        """Merge continuous confirmed detections and close events on absence."""
+        """Merge continuous confirmed detections and close events on absence.
+
+        ``owned_types``: when provided, only events whose type belongs to this
+        set are eligible for closure when absent.  Events from other domains are
+        left untouched so concurrent YOLO + MediaPipe updates don't cancel each
+        other.
+        """
         self.lowest_session_score = min(self.lowest_session_score, score)
 
         for event_type, confidence in active_detections.items():
@@ -105,11 +119,15 @@ class YOLOAIService:
                 continue
 
             event["end_time"] = current_time
-            event["max_confidence"] = max(event["max_confidence"], confidence)
+            if confidence is not None:
+                event["max_confidence"] = max(event["max_confidence"] or 0.0, confidence)
             event["min_score"] = min(event["min_score"], score)
 
         for event_type in list(self.active_events):
             if event_type in active_detections:
+                continue
+            # If domain scoping is active, only close events owned by this domain
+            if owned_types is not None and event_type not in owned_types:
                 continue
             event = self.active_events.pop(event_type)
             self.completed_events.append({
@@ -117,9 +135,16 @@ class YOLOAIService:
                 "start_time": round(event["start_time"], 2),
                 "end_time": round(event["end_time"], 2),
                 "duration": round(max(0.0, event["end_time"] - event["start_time"]), 2),
-                "max_confidence": round(event["max_confidence"], 4),
+                "max_confidence": round(event["max_confidence"], 4) if event["max_confidence"] is not None else None,
                 "min_score": int(event["min_score"]),
             })
+
+    def update_mediapipe_events(self, media_result: Dict[str, Any], score: int) -> None:
+        """Merge confirmed MediaPipe events into the existing Phase 8 session."""
+        confirmed_events = media_result.get("events", []) if media_result.get("face_detected") else []
+        active_events = {event_type: None for event_type in confirmed_events}
+        self._update_session_events(active_events, score, time.time(), owned_types=self._MEDIAPIPE_EVENT_TYPES)
+
 
     def load_model(self, custom_path: Optional[str] = None) -> bool:
         """
@@ -427,7 +452,7 @@ class YOLOAIService:
                 detection["confidence"],
             )
 
-        self._update_session_events(active_event_confidences, score, current_time)
+        self._update_session_events(active_event_confidences, score, current_time, owned_types=self._YOLO_EVENT_TYPES)
         session_summary = self.get_session_summary(score)
 
         # Prioritize alerts / primary display item

@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from app.opencv.processor import opencv_processor
 from app.camera.service import camera_service, handle_video_stream
 from app.ai.yolo_service import yolo_service
+from app.ai.mediapipe_service import mediapipe_service
 from app.config import get_config
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,7 @@ async def process_frame(body: FrameBody):
 async def reset_camera_session():
     """Starts a fresh in-memory monitoring session."""
     yolo_service.reset_session()
+    mediapipe_service.reset_temporal_state()
     return JSONResponse({'success': True, 'session_summary': yolo_service.get_session_summary()}, status_code=200)
 
 
@@ -67,6 +69,9 @@ async def camera_status():
             'confidence_threshold': conf_threshold,
             'device': yolo_service.device,
             'processor': 'YOLO11 AI Object Detection' if yolo_service.is_loaded else 'OpenCV HaarCascade AI',
+            'mediapipe_available': mediapipe_service.face_available or mediapipe_service.hands_available,
+            'face_landmarker_loaded': mediapipe_service.face_available,
+            'hand_landmarker_loaded': mediapipe_service.hands_available,
         },
         status_code=200,
     )

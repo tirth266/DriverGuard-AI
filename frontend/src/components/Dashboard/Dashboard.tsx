@@ -96,11 +96,19 @@ export default memo(function Dashboard() {
   const handleSnapshot = () => toast.success('Snapshot Saved', 'Live webcam frame saved to incident log.')
 
   // End Ride Action
-  const handleConfirmEndRide = () => {
+  const handleConfirmEndRide = async () => {
     setShowEndRideModal(false)
     toast.success('Ride Ended Successfully', 'Redirecting to AI driving report...')
     const isBiz = user?.role === 'business' || user?.accountType === 'business'
     const targetSummary = isBiz ? '/business/ride-summary' : '/personal/ride-summary'
+    let sessionSummary: any = undefined
+    try {
+      const backendUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000').replace(/\/$/, '')
+      const response = await fetch(`${backendUrl}/api/video/session/summary`)
+      if (response.ok) sessionSummary = await response.json()
+    } catch {
+      // The report can still open if the authoritative session read is unavailable.
+    }
     navigate(targetSummary, {
       state: {
         rideData: {
@@ -113,6 +121,7 @@ export default memo(function Dashboard() {
           distance: '48.2 km',
           avgSpeed: '52 km/h',
           score: telemetry.score,
+          sessionSummary,
           events: {
             phoneUsage: { detected: telemetry.phoneDetected, duration: telemetry.phoneDetected ? '12 sec' : '0 sec', occurrences: telemetry.phoneDetected ? 1 : 0 },
             texting: { detected: false, duration: '0 sec', occurrences: 0 },

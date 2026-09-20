@@ -37,6 +37,39 @@ def create_app(config_class=None) -> FastAPI:
         except Exception as e:
             logger.error(f"[YOLO] Failed to initialize YOLO model on startup: {e}")
 
+        # Load MediaPipe Tasks models ONCE at backend startup
+        try:
+            from app.ai.mediapipe_service import MediaPipeDriverService, mediapipe_service as _mp_singleton
+            import inspect
+
+            face_path = settings.MEDIAPIPE_FACE_MODEL_PATH
+            hand_path = settings.MEDIAPIPE_HAND_MODEL_PATH
+
+            # Re-initialise the singleton with resolved config paths
+            _mp_singleton.__init__(face_model_path=face_path, hand_model_path=hand_path)
+
+            face_ok = _mp_singleton.face_available
+            hand_ok = _mp_singleton.hands_available
+            available = face_ok or hand_ok
+
+            logger.info(f"MediaPipe available = {str(available).lower()}")
+            print(f"MediaPipe available = {str(available).lower()}")
+            if face_ok:
+                logger.info("FaceLandmarker loaded")
+                print("FaceLandmarker loaded")
+            else:
+                logger.warning(f"[MediaPipe] FaceLandmarker NOT loaded — check MEDIAPIPE_FACE_MODEL_PATH ({face_path})")
+                print(f"[MediaPipe] FaceLandmarker NOT loaded — check MEDIAPIPE_FACE_MODEL_PATH ({face_path})")
+            if hand_ok:
+                logger.info("HandLandmarker loaded")
+                print("HandLandmarker loaded")
+            else:
+                logger.warning(f"[MediaPipe] HandLandmarker NOT loaded — check MEDIAPIPE_HAND_MODEL_PATH ({hand_path})")
+                print(f"[MediaPipe] HandLandmarker NOT loaded — check MEDIAPIPE_HAND_MODEL_PATH ({hand_path})")
+        except Exception as mp_err:
+            logger.error(f"[MediaPipe] Startup initialization failed: {mp_err}")
+            print(f"[MediaPipe] Startup initialization failed: {mp_err}")
+
         yield
 
 

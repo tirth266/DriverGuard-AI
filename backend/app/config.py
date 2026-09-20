@@ -40,6 +40,16 @@ class Config:
     )
     YOLO_CONFIDENCE_THRESHOLD: float = float(os.environ.get("YOLO_CONFIDENCE_THRESHOLD", "0.40"))
 
+    # ── MediaPipe Tasks Vision (Face & Hand Landmarkers) ──────────────────
+    MEDIAPIPE_FACE_MODEL_PATH: str = os.environ.get(
+        "MEDIAPIPE_FACE_MODEL_PATH",
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "models", "mediapipe", "face_landmarker.task")
+    )
+    MEDIAPIPE_HAND_MODEL_PATH: str = os.environ.get(
+        "MEDIAPIPE_HAND_MODEL_PATH",
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "models", "mediapipe", "hand_landmarker.task")
+    )
+
 
 
 class DevelopmentConfig(Config):

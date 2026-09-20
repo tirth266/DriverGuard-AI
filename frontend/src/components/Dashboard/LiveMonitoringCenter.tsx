@@ -7,8 +7,6 @@ import {
   Maximize2,
   Minimize2,
   CheckCircle2,
-  AlertTriangle,
-  Eye,
   Smartphone,
   ShieldAlert,
   Shield,
@@ -21,6 +19,21 @@ import { useToast } from '../../context/ToastContext'
 import WebcamFeed from './WebcamFeed'
 
 const FINAL_SESSION_STORAGE_KEY = 'driverguard.final_session_summary'
+
+type MediaPipeTelemetry = {
+  available: boolean
+  reason?: string
+  face_detected: boolean
+  eye_state: string
+  eye_measurement: number | null
+  drowsiness_event: boolean
+  yawn_detected: boolean
+  mouth_measurement: number | null
+  head_pose: string
+  hands_detected: boolean
+  hand_count: number
+  hand_landmarks_available: boolean
+}
 
 /* ─── Circular Safety Score Gauge ─────────────────────────── */
 
@@ -80,6 +93,7 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
     latencyMs: null as number | null,
     lastSuccessfulFrameAt: null as number | null,
     processingError: null as string | null,
+    mediapipe: null as MediaPipeTelemetry | null,
     sessionSummary: null as {
       current_safety_score: number
       lowest_session_score: number
@@ -93,7 +107,7 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
         start_time: number
         end_time: number
         duration: number
-        max_confidence: number
+        max_confidence: number | null
         min_score: number
       }>
     } | null,
@@ -410,21 +424,45 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
               </span>
             </div>
 
-            <div className="py-1 border-b border-border space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="text-on-surface-variant text-[11px]">Fatigue Risk</span>
-                <span className="font-bold text-[11px] text-emerald-500">{liveTelemetry.status === 'waiting' ? '--' : `${liveTelemetry.drowsiness}%`}</span>
-              </div>
-              <div className="w-full h-1 bg-background rounded-full overflow-hidden">
-                <div className="h-full bg-emerald-500 rounded-full" style={{ width: liveTelemetry.status === 'waiting' ? '0%' : `${liveTelemetry.drowsiness}%` }} />
-              </div>
+            <div className="flex items-center justify-between py-1 border-b border-border">
+              <span className="text-on-surface-variant text-[11px]">Face Detection</span>
+              <span className="font-bold text-[11px] text-emerald-500">
+                {liveTelemetry.mediapipe ? (liveTelemetry.mediapipe.face_detected ? 'DETECTED' : 'NO FACE') : 'UNAVAILABLE'}
+              </span>
             </div>
 
             <div className="flex items-center justify-between py-1 border-b border-border">
-              <span className="text-on-surface-variant text-[11px]">Eyes on Road</span>
-              <span className={`font-bold text-[11px] flex items-center gap-1 ${liveTelemetry.eyesOnRoad ? 'text-emerald-500' : 'text-rose-500'}`}>
-                {liveTelemetry.status === 'waiting' ? '--' : liveTelemetry.eyesOnRoad ? <Eye size={12} /> : <AlertTriangle size={12} />}
-                {liveTelemetry.status === 'waiting' ? 'WAITING' : liveTelemetry.eyesOnRoad ? 'FOCUSED' : 'DISTRACTED'}
+              <span className="text-on-surface-variant text-[11px]">Eye State</span>
+              <span className={`font-bold text-[11px] ${liveTelemetry.mediapipe?.drowsiness_event ? 'text-rose-500' : 'text-emerald-500'}`}>
+                {liveTelemetry.mediapipe?.eye_state ?? 'UNAVAILABLE'}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between py-1 border-b border-border">
+              <span className="text-on-surface-variant text-[11px]">Drowsiness Event</span>
+              <span className={`font-bold text-[11px] ${liveTelemetry.mediapipe?.drowsiness_event ? 'text-rose-500' : 'text-emerald-500'}`}>
+                {liveTelemetry.mediapipe ? (liveTelemetry.mediapipe.drowsiness_event ? 'CONFIRMED' : 'NONE') : 'UNAVAILABLE'}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between py-1 border-b border-border">
+              <span className="text-on-surface-variant text-[11px]">Yawning</span>
+              <span className={`font-bold text-[11px] ${liveTelemetry.mediapipe?.yawn_detected ? 'text-rose-500' : 'text-emerald-500'}`}>
+                {liveTelemetry.mediapipe ? (liveTelemetry.mediapipe.yawn_detected ? 'CONFIRMED' : 'NONE') : 'UNAVAILABLE'}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between py-1 border-b border-border">
+              <span className="text-on-surface-variant text-[11px]">Head Pose</span>
+              <span className="font-bold text-[11px] text-primary">
+                {liveTelemetry.mediapipe?.head_pose ?? 'UNAVAILABLE'}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between py-1 border-b border-border">
+              <span className="text-on-surface-variant text-[11px]">Hands</span>
+              <span className="font-bold text-[11px] text-primary">
+                {liveTelemetry.mediapipe ? `${liveTelemetry.mediapipe.hand_count} DETECTED` : 'UNAVAILABLE'}
               </span>
             </div>
           </div>

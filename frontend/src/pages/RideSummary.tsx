@@ -58,7 +58,7 @@ type SessionEvent = {
   start_time: number
   end_time: number
   duration: number
-  max_confidence: number
+  max_confidence: number | null
   min_score: number
 }
 
@@ -136,7 +136,7 @@ const RideSummaryPage = memo(function RideSummaryPage() {
   const sessionEvents = sessionSummary.events
   const formatEventTime = (timestamp: number) => new Date(timestamp * 1000).toLocaleTimeString()
   const eventDescription = (event: SessionEvent) =>
-    `${event.type} detected for ${event.duration}s (${Math.round(event.max_confidence * 100)}% max confidence; minimum score ${event.min_score}/100).`
+    `${event.type} detected for ${event.duration}s (${event.max_confidence === null ? 'landmark measurement confidence unavailable' : `${Math.round(event.max_confidence * 100)}% max confidence`}; minimum score ${event.min_score}/100).`
 
   const isBiz = user?.role === 'business' || user?.accountType === 'business'
   const monitoringTarget = isBiz ? '/business/monitoring' : '/personal/monitoring'
@@ -366,7 +366,7 @@ const RideSummaryPage = memo(function RideSummaryPage() {
                 ) : sessionEvents.map((event, index) => (
                   <div key={`${event.type}-${event.start_time}-${index}`} className="relative flex items-center justify-between gap-3 text-xs">
                     <span className="absolute -left-6 w-2.5 h-2.5 rounded-full border-2 border-card bg-rose-500" />
-                    <span className="font-semibold text-on-surface">{event.type} ({event.duration}s, {Math.round(event.max_confidence * 100)}% max confidence)</span>
+                    <span className="font-semibold text-on-surface">{event.type} ({event.duration}s, {event.max_confidence === null ? 'landmark measurement confidence unavailable' : `${Math.round(event.max_confidence * 100)}% max confidence`})</span>
                     <span className="font-mono text-[11px] text-on-surface-variant whitespace-nowrap">{formatEventTime(event.start_time)}</span>
                   </div>
                 ))}
