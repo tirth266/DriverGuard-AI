@@ -7,29 +7,20 @@ import {
   Minimize2,
   CheckCircle2,
   AlertOctagon,
-  Eye,
-  Smartphone,
-  ShieldAlert,
   StopCircle,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import WebcamFeed from './WebcamFeed'
 
-const EVENTS = [
-  { time: '11:08 AM', label: 'Safe Driving Restored', color: 'text-safe', dot: 'bg-safe' },
-  { time: '11:05 AM', label: 'Seat Belt Removed', color: 'text-danger', dot: 'bg-danger' },
-  { time: '10:42 AM', label: 'Drowsiness Warning', color: 'text-warning', dot: 'bg-warning' },
-  { time: '10:31 AM', label: 'Phone Usage Detected', color: 'text-danger', dot: 'bg-danger' },
-  { time: '10:20 AM', label: 'Eyes Off Road – Brief', color: 'text-warning', dot: 'bg-warning' },
-]
-
 /* ─── Safety score gauge ─────────────────────────────────── */
 
 function CircularGauge({ value, size = 80 }: { value: number; size?: number }) {
   const radius = (size - 10) / 2
   const circ = 2 * Math.PI * radius
-  const offset = circ - (value / 100) * circ
+  const clampedVal = Math.max(0, Math.min(100, value))
+  const offset = circ - (clampedVal / 100) * circ
+  const strokeColor = value >= 85 ? '#20D98B' : value >= 70 ? '#F59E0B' : '#EF4444'
   return (
     <svg width={size} height={size} className="rotate-[-90deg]" aria-hidden="true">
       <circle
@@ -46,13 +37,13 @@ function CircularGauge({ value, size = 80 }: { value: number; size?: number }) {
         cy={size / 2}
         r={radius}
         fill="none"
-        stroke="#20D98B"
+        stroke={strokeColor}
         strokeWidth={6}
         strokeLinecap="round"
         strokeDasharray={circ}
         initial={{ strokeDashoffset: circ }}
         animate={{ strokeDashoffset: offset }}
-        transition={{ duration: 1.1, ease: 'easeOut', delay: 0.1 }}
+        transition={{ duration: 0.5, ease: 'easeOut' }}
       />
     </svg>
   )
@@ -77,21 +68,21 @@ function StatusRow({ label, ok, note }: { label: string; ok: boolean; note?: str
 export default memo(function Dashboard() {
   const [cameraFull, setCameraFull] = useState(false)
   const [isRecording, setIsRecording] = useState(true)
-  const [activeAlert, setActiveAlert] = useState<string | null>(null)
   const [showEndRideModal, setShowEndRideModal] = useState(false)
   
   // Real-time telemetry state updated by live OpenCV / YOLO11 camera feed
   const [telemetry, setTelemetry] = useState({
-    score: 98,
+    score: 0,
     eyesOnRoad: true,
     phoneDetected: false,
     seatbeltOk: true,
-    drowsiness: 2,
+    drowsiness: 0,
     faceDetected: true,
     detections: [] as any[],
-    className: 'Safe Driving',
-    confidence: 0.98,
+    className: 'Waiting for live YOLO result',
+    confidence: 0,
     isDistracted: false,
+    alerts: [] as string[],
   })
 
   const { user } = useAuth()
@@ -101,17 +92,6 @@ export default memo(function Dashboard() {
   const handleTelemetryUpdate = useCallback((newTelemetry: any) => {
     setTelemetry(prev => ({ ...prev, ...newTelemetry }))
   }, [])
-
-  const triggerAlert = (type: 'phone' | 'fatigue' | 'seatbelt') => {
-    const messages = {
-      phone: ['⚠️ Phone usage detected', 'Driver using mobile phone.'],
-      fatigue: ['💤 Fatigue detected', 'Driver drowsiness level rising.'],
-      seatbelt: ['🛑 Seat belt removed', 'Driver seat belt is unbuckled.'],
-    }
-    setActiveAlert(messages[type][0])
-    toast.error('SAFETY ALERT', messages[type][1])
-    setTimeout(() => setActiveAlert(null), 5000)
-  }
 
   const handleSnapshot = () => toast.success('Snapshot Saved', 'Live webcam frame saved to incident log.')
 
@@ -186,27 +166,14 @@ export default memo(function Dashboard() {
     <div className="w-full h-full flex-1 max-h-full overflow-y-auto bg-background flex flex-col p-4 md:p-6 text-text-primary">
 
       {/* ── ALERT BANNER ──────────────────────────────────── */}
-      <AnimatePresence>
-        {activeAlert && (
-          <motion.div
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            className="mb-4 flex items-center justify-between bg-danger text-white px-4 py-2.5 rounded-[12px] shadow-md text-xs font-semibold"
-          >
-            <div className="flex items-center gap-2">
-              <AlertOctagon size={16} className="flex-shrink-0" />
-              <span>{activeAlert}</span>
-            </div>
-            <button
-              onClick={() => setActiveAlert(null)}
-              className="text-white/80 hover:text-white text-xs underline font-medium ml-4"
-            >
-              Dismiss
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {telemetry.alerts?.length > 0 && (
+        <div className="mb-4 flex items-center justify-between bg-danger text-white px-4 py-2.5 rounded-[12px] shadow-md text-xs font-semibold">
+          <div className="flex items-center gap-2">
+            <AlertOctagon size={16} className="flex-shrink-0" />
+            <span>{telemetry.alerts[0]}</span>
+          </div>
+        </div>
+      )}
 
       {/* ── MAIN DASHBOARD VIEWPORT ───────────────────────────── */}
       <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
@@ -298,8 +265,12 @@ export default memo(function Dashboard() {
               <span className="text-[11px] font-mono font-semibold text-text-muted uppercase tracking-wider">
                 Driver Safety Score
               </span>
-              <span className="text-[10px] font-mono font-bold text-safe bg-safe/10 px-1.5 py-0.2 rounded border border-safe/25">
-                LIVE
+              <span className={`text-[10px] font-mono font-bold px-1.5 py-0.2 rounded border ${
+                telemetry.isDistracted
+                  ? 'text-danger bg-danger/10 border-danger/30 animate-pulse'
+                  : 'text-safe bg-safe/10 border-safe/25'
+              }`}>
+                {telemetry.isDistracted ? 'DISTRACTED' : 'SAFE'}
               </span>
             </div>
 
@@ -307,14 +278,22 @@ export default memo(function Dashboard() {
               <div className="relative">
                 <CircularGauge value={telemetry.score} size={70} />
                 <div className="absolute inset-0 flex items-center justify-center rotate-[90deg]">
-                  <span className="text-base font-extrabold text-text-primary font-mono">{telemetry.score}</span>
+                  <span className={`text-base font-extrabold font-mono ${
+                    telemetry.score >= 85 ? 'text-text-primary' : telemetry.score >= 70 ? 'text-amber-400' : 'text-danger'
+                  }`}>
+                    {telemetry.score}
+                  </span>
                 </div>
               </div>
               <div>
-                <p className="text-lg font-bold text-text-primary tracking-tight">
-                  {telemetry.score >= 90 ? 'Optimal' : telemetry.score >= 80 ? 'Good' : 'Review Needed'}
+                <p className={`text-lg font-bold tracking-tight ${
+                  telemetry.score >= 85 ? 'text-text-primary' : telemetry.score >= 70 ? 'text-amber-400' : 'text-danger'
+                }`}>
+                  {telemetry.score >= 90 ? 'Optimal' : telemetry.score >= 75 ? 'Caution' : 'Distracted'}
                 </p>
-                <p className="text-xs text-text-muted mt-0.5">Safety index 98th percentile</p>
+                <p className="text-xs text-text-muted mt-0.5">
+                  {telemetry.isDistracted ? 'Distractor object detected' : 'Cabin safe & focused'}
+                </p>
               </div>
             </div>
           </div>
@@ -327,54 +306,29 @@ export default memo(function Dashboard() {
 
             <div className="space-y-0.5">
               <StatusRow label="Driver Verification" ok={telemetry.faceDetected} note={telemetry.faceDetected ? 'VERIFIED' : 'SEARCHING'} />
-              <StatusRow label="Forward Gaze" ok={telemetry.eyesOnRoad} note={telemetry.eyesOnRoad ? 'FOCUSED' : 'OFF-ROAD'} />
-              <StatusRow label="Phone Disengagement" ok={!telemetry.phoneDetected} note={telemetry.phoneDetected ? 'IN USE' : 'CLEAR'} />
-              <StatusRow label="Seat Belt Fastened" ok={telemetry.seatbeltOk} note={telemetry.seatbeltOk ? 'BUCKLED' : 'UNBUCKLED'} />
-              <StatusRow label="Fatigue Index" ok={telemetry.drowsiness < 30} note={`${telemetry.drowsiness}%`} />
+              <StatusRow label="Forward Gaze" ok={false} note="UNSUPPORTED (HARDWARE REQUIRED)" />
+              <StatusRow label="Cabin Distractors" ok={!telemetry.isDistracted} note={telemetry.isDistracted ? 'ACTIVE (RED)' : 'CLEAR (GREEN)'} />
+              <StatusRow label="Seat Belt Fastened" ok={false} note="UNSUPPORTED" />
+              <StatusRow label="Fatigue Index" ok={false} note="UNSUPPORTED" />
             </div>
 
-            {/* Test alert trigger buttons */}
             <div className="pt-2 border-t border-border">
-              <p className="text-[10px] font-mono text-text-muted uppercase tracking-wider mb-2">Simulate Safety Triggers</p>
-              <div className="grid grid-cols-3 gap-1.5">
-                <button
-                  onClick={() => triggerAlert('phone')}
-                  className="px-2 py-1.5 rounded-[6px] bg-card hover:bg-surface border border-border text-[10px] font-medium text-text-primary flex flex-col items-center gap-1 transition-colors"
-                >
-                  <Smartphone size={12} className="text-danger" />
-                  Phone
-                </button>
-                <button
-                  onClick={() => triggerAlert('fatigue')}
-                  className="px-2 py-1.5 rounded-[6px] bg-card hover:bg-surface border border-border text-[10px] font-medium text-text-primary flex flex-col items-center gap-1 transition-colors"
-                >
-                  <Eye size={12} className="text-warning" />
-                  Fatigue
-                </button>
-                <button
-                  onClick={() => triggerAlert('seatbelt')}
-                  className="px-2 py-1.5 rounded-[6px] bg-card hover:bg-surface border border-border text-[10px] font-medium text-text-primary flex flex-col items-center gap-1 transition-colors"
-                >
-                  <ShieldAlert size={12} className="text-danger" />
-                  Seatbelt
-                </button>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px] font-mono text-text-muted uppercase tracking-wider">Live YOLO Signal</p>
+                {telemetry.isDistracted && (
+                  <span className="text-[9px] font-mono font-bold text-danger bg-danger/10 px-1 py-0.5 rounded border border-danger/25">
+                    DISTRACTOR
+                  </span>
+                )}
               </div>
-            </div>
-          </div>
-
-          {/* Recent Event Log */}
-          <div className="bg-surface border border-white/10 rounded-[16px] p-4 shadow-sm space-y-3">
-            <h3 className="text-[11px] font-mono font-semibold text-text-muted uppercase tracking-wider border-b border-border pb-2">
-              Trip Events Log
-            </h3>
-            <div className="space-y-2">
-              {EVENTS.map((ev, i) => (
-                <div key={i} className="flex items-center gap-2.5 text-xs">
-                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${ev.dot}`} />
-                  <span className="font-mono text-text-muted text-[10px]">{ev.time}</span>
-                  <span className={`font-medium ${ev.color} truncate`}>{ev.label}</span>
-                </div>
-              ))}
+              <div className={`rounded-[8px] border px-2.5 py-2 text-[10px] transition-colors ${
+                telemetry.isDistracted ? 'border-danger/40 bg-danger/10 text-danger' : 'border-border bg-card text-text-secondary'
+              }`}>
+                <span className="font-semibold">{telemetry.className || 'Waiting for detection'}</span>
+                {telemetry.confidence > 0 && (
+                  <span className="ml-2 font-mono font-bold">{Math.round(telemetry.confidence * 100)}%</span>
+                )}
+              </div>
             </div>
           </div>
 

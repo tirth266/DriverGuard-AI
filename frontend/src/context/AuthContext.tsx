@@ -45,6 +45,8 @@ interface AuthContextType {
 
 const TOKEN_KEY = 'driverguard_auth_token'
 const USER_KEY  = 'driverguard_user_data'
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '')
+const buildApiUrl = (path: string) => `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`
 
 /* ─── Context ────────────────────────────────────────────── */
 
@@ -131,8 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const isSelected = workspaceService.isWorkspaceSelected()
 
     try {
-      const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
-      const res = await fetch(`${backendUrl}/api/auth/me`, {
+      const res = await fetch(buildApiUrl('/api/auth/me'), {
         headers: { 'Authorization': `Bearer ${callbackToken}` }
       })
       
@@ -174,37 +175,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(false)
       toast.success('Authenticated via Google', `Welcome, ${authUser.name}!`)
       return true
-    } catch {
-      const fallbackRole: AccountType = savedWorkspace || 'personal'
-      const authUser: User = {
-        id: 'usr-google-dev',
-        name: 'Alex Driver',
-        email: 'driver@example.com',
-        company: 'Personal Driver',
-        role: fallbackRole,
-        accountType: fallbackRole,
-        isFirstLogin: false,
-        companySetupComplete: true,
-        hasSelectedWorkspace: isSelected || !!savedWorkspace,
-      }
-      setToken(callbackToken)
-      setUser(authUser)
-      persistUser(authUser, rememberMe)
+    } catch (error) {
+      setUser(null)
+      setToken(null)
       setIsLoading(false)
-      toast.success('Authenticated via Google', `Welcome, ${authUser.name}!`)
-      return true
+      const message = error instanceof Error ? error.message : 'Unable to verify Google login with the backend.'
+      toast.error('Google authentication failed', message)
+      return false
     }
   }, [persistUser, toast])
 
   /* ── Login ─────────────────────────────────────────────── */
   const login = async (email: string, _pass: string, rememberMe = true): Promise<boolean> => {
     setIsLoading(true)
-    const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
     const savedWorkspace = workspaceService.getWorkspacePreference()
     const isSelected = workspaceService.isWorkspaceSelected()
 
     try {
-      const res = await fetch(`${backendUrl}/api/auth/login`, {
+      const res = await fetch(buildApiUrl('/api/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password: _pass })
@@ -245,46 +233,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(false)
       toast.success('Welcome Back!', `Logged in as ${authUser.name}`)
       return true
-    } catch {
-      const isBiz = email.includes('business') || email.includes('fleet')
-      const roleType: AccountType = savedWorkspace
-        ? savedWorkspace
-        : isBiz
-        ? 'business'
-        : 'personal'
-      const mockToken = 'mock_jwt_token_' + Date.now()
-
-      const authUser: User = {
-        id: 'usr-' + Date.now(),
-        name: email.split('@')[0].replace('.', ' '),
-        email,
-        company: roleType === 'business' ? 'Apex Logistics' : 'Personal Driver',
-        role: roleType,
-        accountType: roleType,
-        isFirstLogin: false,
-        companySetupComplete: true,
-        hasSelectedWorkspace: isSelected || !!savedWorkspace,
-      }
-
-      setToken(mockToken)
-      setUser(authUser)
-      const storage = rememberMe ? localStorage : sessionStorage
-      storage.setItem(TOKEN_KEY, mockToken)
-      persistUser(authUser, rememberMe)
-
+    } catch (error) {
+      setUser(null)
+      setToken(null)
       setIsLoading(false)
-      toast.success('Welcome Back!', `Logged in as ${authUser.name}`)
-      return true
+      const message = error instanceof Error ? error.message : 'Login failed.'
+      toast.error('Login failed', message)
+      return false
     }
   }
 
   /* ── Signup ────────────────────────────────────────────── */
   const signup = async (name: string, company: string, email: string, _pass: string, role: AccountType = 'personal'): Promise<boolean> => {
     setIsLoading(true)
-    const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
-    
     try {
-      const res = await fetch(`${backendUrl}/api/auth/register`, {
+      const res = await fetch(buildApiUrl('/api/auth/register'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, company, email, password: _pass, role })
@@ -320,37 +283,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(false)
       toast.success('Account Created!', `Welcome to DriverGuard AI, ${name}!`)
       return true
-    } catch {
-      const mockToken = 'mock_jwt_token_' + Date.now()
-      workspaceService.saveWorkspacePreference(role)
-
-      const authUser: User = {
-        id: 'usr-' + Date.now(),
-        name,
-        email,
-        company: company || (role === 'personal' ? 'Personal Driver' : 'Fleet Company'),
-        role,
-        accountType: role,
-        isFirstLogin: false,
-        companySetupComplete: true,
-        hasSelectedWorkspace: true,
-      }
-
-      setToken(mockToken)
-      setUser(authUser)
-      localStorage.setItem(TOKEN_KEY, mockToken)
-      persistUser(authUser)
-
+    } catch (error) {
+      setUser(null)
+      setToken(null)
       setIsLoading(false)
-      toast.success('Account Created!', `Welcome to DriverGuard AI, ${name}!`)
-      return true
+      const message = error instanceof Error ? error.message : 'Signup failed.'
+      toast.error('Signup failed', message)
+      return false
     }
   }
 
   /* ── Google login ──────────────────────────────────────── */
   const loginWithGoogle = async (): Promise<boolean> => {
-    const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
-    window.location.href = `${backendUrl}/api/auth/google`
+    window.location.href = buildApiUrl('/api/auth/google')
     return new Promise(() => {})
   }
 

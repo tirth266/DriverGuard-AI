@@ -1,6 +1,8 @@
+import time
 import base64
 import logging
 import os
+from collections import deque
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
@@ -24,6 +26,100 @@ class YOLOAIService:
         self.device = "cpu"
         self.task = "detect"
         self.classes: Dict[int, str] = {}
+        
+        # Temporal reasoning for phone detections
+        self.phone_history: deque = deque(maxlen=150)
+        self.MIN_FRAMES_FOR_DISTRACTION = 3
+
+        # Configured distraction classes (pretrained YOLO11 COCO)
+        self.DISTRACTOR_CLASSES = {"cell phone", "bottle", "cup"}
+        self.SAFE_BASELINE_SCORE = 98
+
+        # In-memory session distraction summary (Phase 8)
+        self.session_start_time: float = time.time()
+        self.lowest_session_score: int = self.SAFE_BASELINE_SCORE
+        self.active_events: Dict[str, Dict[str, Any]] = {}
+        self.completed_events: List[Dict[str, Any]] = []
+
+    def reset_session(self) -> None:
+        """Resets all in-memory session metrics and event history."""
+        self.session_start_time = time.time()
+        self.lowest_session_score = self.SAFE_BASELINE_SCORE
+        self.active_events.clear()
+        self.completed_events.clear()
+        self.phone_history.clear()
+
+    def get_session_summary(self, current_score: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Builds the in-memory session summary including all completed and currently active events.
+        """
+        score = current_score if current_score is not None else self.SAFE_BASELINE_SCORE
+
+        # Combine completed and active events without duplicates
+        all_events: List[Dict[str, Any]] = list(self.completed_events)
+        for ev in self.active_events.values():
+            all_events.append({
+                "type": ev["type"],
+                "start_time": round(ev["start_time"], 2),
+                "end_time": round(ev["end_time"], 2),
+                "duration": round(max(0.0, ev["end_time"] - ev["start_time"]), 2),
+                "max_confidence": round(ev["max_confidence"], 4),
+                "min_score": int(ev["min_score"]),
+            })
+
+        phone_events = sum(1 for e in all_events if e["type"] == "cell phone")
+        bottle_events = sum(1 for e in all_events if e["type"] == "bottle")
+        cup_events = sum(1 for e in all_events if e["type"] == "cup")
+        total_duration = round(sum(e["duration"] for e in all_events), 2)
+
+        return {
+            "current_safety_score": score,
+            "lowest_session_score": int(self.lowest_session_score),
+            "total_distraction_events": len(all_events),
+            "phone_events": phone_events,
+            "bottle_events": bottle_events,
+            "cup_events": cup_events,
+            "total_distracted_duration": total_duration,
+            "events": all_events,
+        }
+
+    def _update_session_events(
+        self,
+        active_detections: Dict[str, float],
+        score: int,
+        current_time: float,
+    ) -> None:
+        """Merge continuous confirmed detections and close events on absence."""
+        self.lowest_session_score = min(self.lowest_session_score, score)
+
+        for event_type, confidence in active_detections.items():
+            event = self.active_events.get(event_type)
+            if event is None:
+                self.active_events[event_type] = {
+                    "type": event_type,
+                    "start_time": current_time,
+                    "end_time": current_time,
+                    "max_confidence": confidence,
+                    "min_score": score,
+                }
+                continue
+
+            event["end_time"] = current_time
+            event["max_confidence"] = max(event["max_confidence"], confidence)
+            event["min_score"] = min(event["min_score"], score)
+
+        for event_type in list(self.active_events):
+            if event_type in active_detections:
+                continue
+            event = self.active_events.pop(event_type)
+            self.completed_events.append({
+                "type": event["type"],
+                "start_time": round(event["start_time"], 2),
+                "end_time": round(event["end_time"], 2),
+                "duration": round(max(0.0, event["end_time"] - event["start_time"]), 2),
+                "max_confidence": round(event["max_confidence"], 4),
+                "min_score": int(event["min_score"]),
+            })
 
     def load_model(self, custom_path: Optional[str] = None) -> bool:
         """
@@ -159,15 +255,13 @@ class YOLOAIService:
         detections: List[Dict[str, Any]] = []
         alerts: List[str] = []
 
-        is_distracted = False
-        phone_detected = False
         face_detected = False
-        eyes_on_road = True
-        status = "safe"
-        score = 98
+        frame_has_phone = False
+        frame_has_bottle = False
+        frame_has_cup = False
 
-        top_class_name = "Cabin Safe"
-        top_confidence = 0.98
+        top_class_name = "No Objects Detected"
+        top_confidence = 0.0
 
         # ── Extract Object Detections ──────────────────────────────────────────
         if hasattr(res, "boxes") and res.boxes is not None and len(res.boxes) > 0:
@@ -181,32 +275,32 @@ class YOLOAIService:
                 if conf < confidence_threshold:
                     continue
 
-                cls_name_lower = cls_name.lower()
+                cls_name_lower = cls_name.lower().strip()
 
-                # Determine distractor classification
+                # Determine distractor classification (COCO classes: cell phone, bottle, cup)
                 is_phone = "phone" in cls_name_lower or "cell" in cls_name_lower
-                is_smoke = "smoke" in cls_name_lower or "cigarette" in cls_name_lower
-                is_distractor = is_phone or is_smoke or "distract" in cls_name_lower
+                is_bottle = "bottle" in cls_name_lower
+                is_cup = "cup" in cls_name_lower
+                is_person = "person" in cls_name_lower
+
+                # Only configured distractors are flagged; normal cabin objects remain non-distractors
+                is_distractor = is_phone or is_bottle or is_cup
 
                 if is_phone:
-                    phone_detected = True
-                    is_distracted = True
-                    status = "distracted"
-                    alerts.append(f"Warning: Mobile phone detected ({int(conf * 100)}%)")
-
-                if is_smoke:
-                    is_distracted = True
-                    status = "distracted"
-                    alerts.append(f"Warning: Smoking detected ({int(conf * 100)}%)")
-
-                if "person" in cls_name_lower:
+                    frame_has_phone = True
+                if is_bottle:
+                    frame_has_bottle = True
+                if is_cup:
+                    frame_has_cup = True
+                if is_person:
                     face_detected = True
 
-                # Record detection with integer coordinates
+                # Record detection with integer coordinates and distractor flag
                 detection_entry = {
                     "class_id": cls_id,
                     "class_name": cls_name,
                     "confidence": round(conf, 4),
+                    "is_distractor": is_distractor,
                     "bbox": {
                         "x1": x1,
                         "y1": y1,
@@ -217,6 +311,7 @@ class YOLOAIService:
                 detections.append(detection_entry)
 
                 # Render Bounding Box on overlay frame
+                # Distractor -> RED (0, 0, 255), Normal/background -> GREEN (0, 255, 0)
                 box_color = (0, 0, 255) if is_distractor else (0, 255, 0)
                 cv2.rectangle(overlay_frame, (x1, y1), (x2, y2), box_color, 2)
 
@@ -241,26 +336,109 @@ class YOLOAIService:
                     cv2.LINE_AA
                 )
 
-        # Update scoring and distraction states
+        # ── Temporal Logic for Distraction ─────────────────────────────────────
+        current_time = time.time()
+        if frame_has_phone:
+            self.phone_history.append(current_time)
+        else:
+            self.phone_history.clear()
+
+        # Clean up old history outside the rolling window
+        phone_confirmed = len(self.phone_history) >= self.MIN_FRAMES_FOR_DISTRACTION
+        phone_detected_event = phone_confirmed
+
+        # Active distractor detections in the current frame
+        distractor_dets = [d for d in detections if d.get("is_distractor")]
+
+        # Distraction status: distracted whenever at least one configured distractor object
+        # is currently or temporally confirmed; safe when no distractor is present.
+        is_distracted = phone_confirmed or frame_has_bottle or frame_has_cup or (frame_has_phone and phone_confirmed)
+
+        # ── Dynamic Safety Score Calculation ──────────────────────────────────
         if is_distracted:
-            score = max(35, int(70 - (10 * len(alerts))))
-            eyes_on_road = False
+            status = "distracted"
+            total_penalty = 0.0
+            distractor_count = 0
+
+            for d in distractor_dets:
+                cname = d["class_name"].lower()
+                c_conf = d["confidence"]
+                if "phone" in cname or "cell" in cname:
+                    total_penalty += 25.0 + (15.0 * c_conf)
+                    distractor_count += 1
+                elif "bottle" in cname:
+                    total_penalty += 15.0 + (10.0 * c_conf)
+                    distractor_count += 1
+                elif "cup" in cname:
+                    total_penalty += 15.0 + (10.0 * c_conf)
+                    distractor_count += 1
+
+            # If phone is temporally confirmed during a brief frame drop
+            if phone_confirmed and not any("phone" in d["class_name"].lower() or "cell" in d["class_name"].lower() for d in distractor_dets):
+                total_penalty += 35.0
+                distractor_count += 1
+
+            # Compound penalty for multiple concurrent distractors
+            if distractor_count > 1:
+                total_penalty += 5.0 * (distractor_count - 1)
+
+            score = max(20, min(self.SAFE_BASELINE_SCORE, int(round(self.SAFE_BASELINE_SCORE - total_penalty))))
+
+            # Distractor alerts without fabricating driver actions (never infer drinking from bottle/cup)
+            active_distractor_names = set()
+            for d in distractor_dets:
+                cname = d["class_name"].lower()
+                if "phone" in cname or "cell" in cname:
+                    active_distractor_names.add("Mobile Phone")
+                elif "bottle" in cname:
+                    active_distractor_names.add("Bottle")
+                elif "cup" in cname:
+                    active_distractor_names.add("Cup")
+
+            if phone_confirmed and "Mobile Phone" not in active_distractor_names:
+                active_distractor_names.add("Mobile Phone")
+
+            for d_name in sorted(active_distractor_names):
+                if d_name == "Mobile Phone":
+                    alerts.append("Warning: Mobile phone distractor detected")
+                else:
+                    alerts.append(f"Warning: Distractor object detected ({d_name})")
         else:
             status = "safe"
-            score = 98
+            score = self.SAFE_BASELINE_SCORE
+
+        # Session events use confirmed phone detections and immediate bottle/cup detections.
+        active_event_confidences: Dict[str, float] = {}
+        for detection in distractor_dets:
+            class_name = detection["class_name"].lower()
+            if "cell phone" in class_name or "phone" in class_name:
+                event_type = "cell phone"
+            elif "bottle" in class_name:
+                event_type = "bottle"
+            elif "cup" in class_name:
+                event_type = "cup"
+            else:
+                continue
+
+            if event_type == "cell phone" and not phone_confirmed:
+                continue
+            active_event_confidences[event_type] = max(
+                active_event_confidences.get(event_type, 0.0),
+                detection["confidence"],
+            )
+
+        self._update_session_events(active_event_confidences, score, current_time)
+        session_summary = self.get_session_summary(score)
 
         # Prioritize alerts / primary display item
-        if detections:
-            # If phone or distractor is detected, make it the prominent class
-            distractor_dets = [d for d in detections if any(kw in d["class_name"].lower() for kw in ["phone", "cell", "smoke"])]
-            if distractor_dets:
-                primary = max(distractor_dets, key=lambda x: x["confidence"])
-                top_class_name = primary["class_name"].title()
-                top_confidence = primary["confidence"]
-            else:
-                primary = max(detections, key=lambda x: x["confidence"])
-                top_class_name = primary["class_name"].title()
-                top_confidence = primary["confidence"]
+        if distractor_dets:
+            primary = max(distractor_dets, key=lambda x: x["confidence"])
+            top_class_name = primary["class_name"].title()
+            top_confidence = primary["confidence"]
+        elif detections:
+            primary = max(detections, key=lambda x: x["confidence"])
+            top_class_name = primary["class_name"].title()
+            top_confidence = primary["confidence"]
 
         # ── Draw AI HUD Overlays ──────────────────────────────────────────────
         hud_bg = overlay_frame.copy()
@@ -295,7 +473,7 @@ class YOLOAIService:
         )
 
         # Footer Bar
-        footer_text = f"OBJECTS: {len(detections)} | CABIN: {'ALERT' if is_distracted else 'FOCUSED'} | PHONE: {'DETECTED' if phone_detected else 'CLEAR'}"
+        footer_text = f"OBJECTS: {len(detections)} | CABIN: {'ALERT' if is_distracted else 'FOCUSED'} | DISTRACTORS: {len(distractor_dets)}"
         cv2.putText(
             overlay_frame,
             footer_text,
@@ -315,18 +493,16 @@ class YOLOAIService:
             "success": True,
             "status": status,
             "is_distracted": is_distracted,
-            "top_class": top_class_name.lower().replace(" ", "_"),
+            "top_class": top_class_name.lower().replace(" ", "_") if detections else "none",
             "class_name": top_class_name,
             "confidence": top_confidence,
             "score": score,
             "face_detected": face_detected,
-            "eyes_on_road": eyes_on_road,
-            "phone_detected": phone_detected,
-            "seatbelt_ok": True,
-            "drowsiness": 5 if is_distracted else 2,
+            "phone_detected": phone_detected_event,
             "detections": detections,
             "detection_count": len(detections),
             "alerts": alerts,
+            "session_summary": session_summary,
             "processed_frame": f"data:image/jpeg;base64,{processed_base64}",
             "width": w,
             "height": h,

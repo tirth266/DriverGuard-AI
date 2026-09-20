@@ -2,8 +2,12 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { AlertTriangle, ShieldAlert, Camera, RefreshCw, Cpu } from 'lucide-react'
 
+type CameraState = 'initializing' | 'active' | 'denied' | 'not_detected' | 'error'
+type ProcessingState = 'idle' | 'processing' | 'success' | 'error'
+type DetectionState = 'waiting' | 'no_object' | 'object_detected' | 'api_error' | 'camera_unavailable'
+
 interface WebcamFeedProps {
-  onTelemetryUpdate?: (telemetry: {
+  onTelemetryUpdate?: (telemetry: Partial<{
     score: number
     eyesOnRoad: boolean
     phoneDetected: boolean
@@ -18,7 +22,30 @@ interface WebcamFeedProps {
     detections?: any[]
     detectionCount?: number
     alerts?: string[]
-  }) => void
+    cameraState: CameraState
+    processingState: ProcessingState
+    detectionState: DetectionState
+    latencyMs: number | null
+    lastSuccessfulFrameAt: number | null
+    processingError: string | null
+    sessionSummary?: {
+      current_safety_score: number
+      lowest_session_score: number
+      total_distraction_events: number
+      phone_events: number
+      bottle_events: number
+      cup_events: number
+      total_distracted_duration: number
+      events: Array<{
+        type: string
+        start_time: number
+        end_time: number
+        duration: number
+        max_confidence: number
+        min_score: number
+      }>
+    } | null
+  }>) => void
   isRecording?: boolean
   className?: string
 }
@@ -28,28 +55,58 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const isProcessingRef = useRef<boolean>(false)
+  const requestInFlightRef = useRef<boolean>(false)
 
-  const [status, setStatus] = useState<'initializing' | 'active' | 'denied' | 'not_detected' | 'error'>('initializing')
+  const [status, setStatus] = useState<CameraState>('initializing')
   const [errorMessage, setErrorMessage] = useState<string>('')
+  const [processingState, setProcessingState] = useState<ProcessingState>('idle')
+  const [processingError, setProcessingError] = useState<string | null>(null)
+  const [latencyMs, setLatencyMs] = useState<number | null>(null)
+  const [lastSuccessfulFrameAt, setLastSuccessfulFrameAt] = useState<number | null>(null)
   const [processedFrame, setProcessedFrame] = useState<string | null>(null)
   const [_faceDetected, setFaceDetected] = useState<boolean>(true)
   const [isDistracted, setIsDistracted] = useState<boolean>(false)
-  const [yoloClass, setYoloClass] = useState<string>('Safe Driving')
-  const [yoloConfidence, setYoloConfidence] = useState<number>(0.98)
+  const [yoloClass, setYoloClass] = useState<string>('Waiting for live YOLO result')
+  const [yoloConfidence, setYoloConfidence] = useState<number>(0)
   const [detections, setDetections] = useState<any[]>([])
   const [fps, setFps] = useState<number>(0)
   const lastFrameTimeRef = useRef<number>(Date.now())
   const lastVoiceAlertTimeRef = useRef<number>(0)
 
+  const publishObservability = useCallback((update: Partial<{
+    cameraState: CameraState
+    processingState: ProcessingState
+    detectionState: DetectionState
+    latencyMs: number | null
+    lastSuccessfulFrameAt: number | null
+    processingError: string | null
+  }>) => {
+    onTelemetryUpdate?.(update)
+  }, [onTelemetryUpdate])
+
   // Initialize browser webcam
   const startCamera = useCallback(async () => {
     setStatus('initializing')
     setErrorMessage('')
+    setProcessingError(null)
+    setProcessingState('idle')
+    publishObservability({
+      cameraState: 'initializing',
+      processingState: 'idle',
+      detectionState: 'waiting',
+      processingError: null,
+    })
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setStatus('error')
       setErrorMessage('Browser does not support camera access (getUserMedia missing).')
+      setProcessingState('error')
+      publishObservability({
+        cameraState: 'error',
+        processingState: 'error',
+        detectionState: 'camera_unavailable',
+        processingError: 'Camera access is not supported by this browser.',
+      })
       return
     }
 
@@ -66,6 +123,20 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
       const mediaStream = await navigator.mediaDevices.getUserMedia(constraints)
       streamRef.current = mediaStream
 
+      mediaStream.getTracks().forEach(track => {
+        track.addEventListener('ended', () => {
+          setStatus('error')
+          setErrorMessage('The camera disconnected. Reconnect it and retry the live stream.')
+          setProcessingState('error')
+          publishObservability({
+            cameraState: 'error',
+            processingState: 'error',
+            detectionState: 'camera_unavailable',
+            processingError: 'The camera disconnected. Reconnect it and retry the live stream.',
+          })
+        })
+      })
+
       if (videoRef.current) {
         if (videoRef.current.srcObject !== mediaStream) {
           videoRef.current.srcObject = mediaStream
@@ -80,6 +151,7 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
       }
 
       setStatus('active')
+      publishObservability({ cameraState: 'active', processingState: 'idle', detectionState: 'waiting' })
     } catch (err: any) {
       console.error('Camera initialization error:', err)
       const errName = err.name || ''
@@ -88,15 +160,36 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
       if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError' || errStr.includes('denied')) {
         setStatus('denied')
         setErrorMessage('Camera permission was denied. Please grant camera access in browser site settings.')
+        setProcessingState('error')
+        publishObservability({
+          cameraState: 'denied',
+          processingState: 'error',
+          detectionState: 'camera_unavailable',
+          processingError: 'Camera permission was denied. Please allow camera access and retry.',
+        })
       } else if (errName === 'NotFoundError' || errName === 'DevicesNotFoundError' || errStr.includes('not found')) {
         setStatus('not_detected')
         setErrorMessage('Camera not detected. Please connect a webcam and try again.')
+        setProcessingState('error')
+        publishObservability({
+          cameraState: 'not_detected',
+          processingState: 'error',
+          detectionState: 'camera_unavailable',
+          processingError: 'No camera was detected. Connect a webcam and retry.',
+        })
       } else {
         setStatus('error')
         setErrorMessage(errStr || 'Failed to initialize live camera stream.')
+        setProcessingState('error')
+        publishObservability({
+          cameraState: 'error',
+          processingState: 'error',
+          detectionState: 'camera_unavailable',
+          processingError: 'The camera could not be started. Retry the live stream.',
+        })
       }
     }
-  }, [])
+  }, [publishObservability])
 
   // Start webcam on mount
   useEffect(() => {
@@ -110,7 +203,7 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
         clearInterval(intervalRef.current)
         intervalRef.current = null
       }
-      isProcessingRef.current = false
+      requestInFlightRef.current = false
     }
   }, [startCamera])
 
@@ -121,14 +214,12 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
         clearInterval(intervalRef.current)
         intervalRef.current = null
       }
-      isProcessingRef.current = false
+      requestInFlightRef.current = false
       return
     }
 
-    if (isProcessingRef.current) return
-    isProcessingRef.current = true
-
     const sendFrameToBackend = async () => {
+      if (requestInFlightRef.current) return
       if (!videoRef.current || !canvasRef.current) return
       const video = videoRef.current
       const canvas = canvasRef.current
@@ -146,19 +237,52 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
 
       ctx.drawImage(video, 0, 0, w, h)
       const frameData = canvas.toDataURL('image/jpeg', 0.6)
+      const requestStartedAt = performance.now()
+      requestInFlightRef.current = true
+      setProcessingState('processing')
+      setProcessingError(null)
+      publishObservability({
+        cameraState: 'active',
+        processingState: 'processing',
+        detectionState: 'waiting',
+        processingError: null,
+      })
 
       try {
-        const backendUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'
+        const backendUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000').replace(/\/$/, '')
         const response = await fetch(`${backendUrl}/api/video/process_frame`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ frame: frameData }),
         })
 
-        if (response.ok) {
-          const resData = await response.json()
+        const latency = Math.round(performance.now() - requestStartedAt)
+        setLatencyMs(latency)
 
-          if (resData.success && resData.processed_frame) {
+        let resData: any = null
+        try {
+          resData = await response.json()
+        } catch {
+          resData = null
+        }
+
+        if (!response.ok || !resData?.success || !resData.processed_frame) {
+          const message = typeof resData?.message === 'string'
+            ? resData.message
+            : 'Live detection is temporarily unavailable. Please retry.'
+          setProcessingState('error')
+          setProcessingError(message)
+          publishObservability({
+            cameraState: 'active',
+            processingState: 'error',
+            detectionState: 'api_error',
+            latencyMs: latency,
+            processingError: message,
+          })
+          return
+        }
+
+        if (resData.success && resData.processed_frame) {
             setProcessedFrame(resData.processed_frame)
             setFaceDetected(resData.face_detected !== false)
             setIsDistracted(resData.is_distracted === true)
@@ -174,6 +298,17 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
             const delta = (now - lastFrameTimeRef.current) / 1000
             if (delta > 0) setFps(Math.round(1 / delta))
             lastFrameTimeRef.current = now
+            setProcessingState('success')
+            setProcessingError(null)
+            setLastSuccessfulFrameAt(now)
+            publishObservability({
+              cameraState: 'active',
+              processingState: 'success',
+              detectionState: rawDets.length > 0 ? 'object_detected' : 'no_object',
+              latencyMs: latency,
+              lastSuccessfulFrameAt: now,
+              processingError: null,
+            })
 
             // Voice Warning Audio Alert with 5s Cooldown
             if (resData.is_distracted && resData.alerts && resData.alerts.length > 0) {
@@ -191,26 +326,39 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
             // Update parent telemetry
             if (onTelemetryUpdate) {
               onTelemetryUpdate({
-                score: resData.score ?? (resData.is_distracted ? 65 : 98),
-                eyesOnRoad: resData.eyes_on_road !== false,
-                phoneDetected: resData.phone_detected === true,
-                seatbeltOk: resData.seatbelt_ok !== false,
-                drowsiness: resData.drowsiness ?? (resData.is_distracted ? 8 : 2),
-                faceDetected: resData.face_detected !== false,
-                status: resData.status ?? (resData.is_distracted ? 'distracted' : 'safe'),
-                isDistracted: resData.is_distracted === true,
-                topClass: resData.top_class ?? 'cabin_safe',
-                className: resData.class_name ?? 'Safe Driving',
-                confidence: resData.confidence ?? 0.98,
+                score: resData.score,
+                eyesOnRoad: resData.eyes_on_road,
+                phoneDetected: resData.phone_detected,
+                seatbeltOk: resData.seatbelt_ok,
+                drowsiness: resData.drowsiness,
+                faceDetected: resData.face_detected,
+                status: resData.status,
+                isDistracted: resData.is_distracted,
+                topClass: resData.top_class,
+                className: resData.class_name,
+                confidence: resData.confidence,
                 detections: rawDets,
                 detectionCount: rawDets.length,
                 alerts: resData.alerts ?? [],
+                sessionSummary: resData.session_summary ?? null,
               })
             }
-          }
         }
-      } catch {
-        // Fallback: Display raw video if backend is loading
+      } catch (error) {
+        const message = error instanceof Error && error.message
+          ? error.message
+          : 'Unable to reach live detection service. Check that the backend is running.'
+        setProcessingState('error')
+        setProcessingError(message)
+        publishObservability({
+          cameraState: 'active',
+          processingState: 'error',
+          detectionState: 'api_error',
+          latencyMs: Math.round(performance.now() - requestStartedAt),
+          processingError: 'Unable to reach live detection service. Check that the backend is running.',
+        })
+      } finally {
+        requestInFlightRef.current = false
       }
     }
 
@@ -221,9 +369,9 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
         clearInterval(intervalRef.current)
         intervalRef.current = null
       }
-      isProcessingRef.current = false
+      requestInFlightRef.current = false
     }
-  }, [status, onTelemetryUpdate])
+  }, [status, onTelemetryUpdate, publishObservability])
 
   return (
     <div className={`relative bg-black flex-1 overflow-hidden group min-h-[300px] ${className}`}>
@@ -261,6 +409,22 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
           animate={{ top: ['3%', '94%', '3%'] }}
           transition={{ duration: 3.5, repeat: Infinity, ease: 'linear' }}
         />
+      )}
+
+      {status === 'active' && (
+        <div className="absolute bottom-3 left-3 right-3 bg-black/75 backdrop-blur-md px-3 py-2 rounded-xl border border-white/10 text-white flex items-center justify-between gap-3 text-[10px] font-mono z-20">
+          <span className={processingState === 'error' ? 'text-rose-400' : processingState === 'processing' ? 'text-amber-300' : 'text-emerald-400'}>
+            {processingState === 'processing' ? 'PROCESSING FRAME' : processingState === 'error' ? 'PROCESSING ERROR' : 'PROCESSING ACTIVE'}
+          </span>
+          <span>{latencyMs === null ? 'LATENCY: --' : `LATENCY: ${latencyMs}ms`}</span>
+          <span>{lastSuccessfulFrameAt === null ? 'LAST SUCCESS: --' : `LAST SUCCESS: ${new Date(lastSuccessfulFrameAt).toLocaleTimeString()}`}</span>
+        </div>
+      )}
+
+      {status === 'active' && processingState === 'error' && (
+        <div className="absolute top-14 left-3 right-3 bg-rose-950/90 text-rose-100 px-3 py-2 rounded-xl border border-rose-400/40 text-xs z-30">
+          {processingError || 'Live detection is temporarily unavailable. Please retry.'}
+        </div>
       )}
 
       {/* Top HUD status badge */}

@@ -1,9 +1,8 @@
-import { memo, useState } from 'react'
+import { memo, useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Radio,
-  Search,
   Camera,
   Maximize2,
   Minimize2,
@@ -21,117 +20,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import WebcamFeed from './WebcamFeed'
 
-/* ─── Mock Driver List with Individual Telemetry ───────────── */
-
-interface FleetDriver {
-  id: string
-  name: string
-  vehicle: string
-  status: 'online' | 'offline' | 'alert'
-  score: number
-  drowsiness: number
-  phoneDetected: boolean
-  seatbeltOk: boolean
-  smokingDetected: boolean
-  eyesOnRoad: boolean
-  handsOnWheel: boolean
-  feedImage: string
-  events: { time: string; label: string; dot: string }[]
-}
-
-const FLEET_DRIVERS: FleetDriver[] = [
-  {
-    id: 'DRV-101',
-    name: 'John Driver',
-    vehicle: 'Freightliner Cascadia #4082',
-    status: 'online',
-    score: 98,
-    drowsiness: 2,
-    phoneDetected: false,
-    seatbeltOk: true,
-    smokingDetected: false,
-    eyesOnRoad: true,
-    handsOnWheel: true,
-    feedImage: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCcKaLxmdIZwnR0lQmtyJqnulBLej0a0G8kFHVn1alPzu5Bih45tWBAph9k-Y_O-mDBiS96RZ6X6Pm6niij5B-CplXhXHUVFwTuaIm9ON1SnuBg7edeuTBmwyT-UrudvWqkJQYfwkRmLV4JkTFdmL0Za-_fIa5CC0_p2urfVKpFZ5yHicpcA_Xzpw1Baf5ENstaxctcRb9e5Ob1HFkQ9ZCUPonuqkQZT2f-2yawldUCYahojUrdLzzydNygLW_VYW37cVHmdtONPi4',
-    events: [
-      { time: '11:08 AM', label: 'Safe Driving Restored', dot: 'bg-emerald-500' },
-      { time: '10:45 AM', label: 'Brief Eye Disengagement', dot: 'bg-amber-400' },
-      { time: '10:12 AM', label: 'Shift Started', dot: 'bg-primary' },
-    ],
-  },
-  {
-    id: 'DRV-102',
-    name: 'Marcus Vance',
-    vehicle: 'Kenworth T680 #2014',
-    status: 'alert',
-    score: 74,
-    drowsiness: 24,
-    phoneDetected: true,
-    seatbeltOk: true,
-    smokingDetected: false,
-    eyesOnRoad: false,
-    handsOnWheel: false,
-    feedImage: 'https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?auto=format&fit=crop&w=800&q=80',
-    events: [
-      { time: '11:15 AM', label: 'Fatigue Warning Triggered', dot: 'bg-rose-500' },
-      { time: '11:10 AM', label: 'Phone Usage Detected', dot: 'bg-rose-500' },
-      { time: '10:30 AM', label: 'Rest Break Requested', dot: 'bg-amber-500' },
-    ],
-  },
-  {
-    id: 'DRV-103',
-    name: 'Elena Rostova',
-    vehicle: 'Volvo VNL 860 #1093',
-    status: 'online',
-    score: 95,
-    drowsiness: 4,
-    phoneDetected: false,
-    seatbeltOk: true,
-    smokingDetected: false,
-    eyesOnRoad: true,
-    handsOnWheel: true,
-    feedImage: 'https://images.unsplash.com/photo-1511919884226-fd3cad34687c?auto=format&fit=crop&w=800&q=80',
-    events: [
-      { time: '11:02 AM', label: 'Safe Driving Restored', dot: 'bg-emerald-500' },
-      { time: '10:15 AM', label: 'Pre-Trip Inspection Verified', dot: 'bg-emerald-500' },
-    ],
-  },
-  {
-    id: 'DRV-104',
-    name: 'David Miller',
-    vehicle: 'Peterbilt 579 #3021',
-    status: 'offline',
-    score: 91,
-    drowsiness: 0,
-    phoneDetected: false,
-    seatbeltOk: true,
-    smokingDetected: false,
-    eyesOnRoad: true,
-    handsOnWheel: true,
-    feedImage: 'https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?auto=format&fit=crop&w=800&q=80',
-    events: [
-      { time: '09:40 AM', label: 'Engine Off - Rest Standby', dot: 'bg-gray-400' },
-    ],
-  },
-  {
-    id: 'DRV-105',
-    name: 'Samantha Reed',
-    vehicle: 'Mack Anthem #5012',
-    status: 'online',
-    score: 99,
-    drowsiness: 1,
-    phoneDetected: false,
-    seatbeltOk: true,
-    smokingDetected: false,
-    eyesOnRoad: true,
-    handsOnWheel: true,
-    feedImage: 'https://images.unsplash.com/photo-1580273916550-e323be2ae537?auto=format&fit=crop&w=800&q=80',
-    events: [
-      { time: '11:20 AM', label: 'Optimal Driving Performance', dot: 'bg-emerald-500' },
-      { time: '10:45 AM', label: 'Shift Commenced', dot: 'bg-primary' },
-    ],
-  },
-]
+const FINAL_SESSION_STORAGE_KEY = 'driverguard.final_session_summary'
 
 /* ─── Circular Safety Score Gauge ─────────────────────────── */
 
@@ -165,11 +54,6 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
   const toast = useToast()
   const navigate = useNavigate()
 
-  // Selected driver state
-  const [selectedDriverId, setSelectedDriverId] = useState<string>('DRV-101')
-  const [searchTerm, setSearchTerm] = useState('')
-  const [filterStatus, setFilterStatus] = useState<'all' | 'online' | 'offline' | 'alert'>('all')
-
   // Feed control states
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [isRecording, setIsRecording] = useState(true)
@@ -177,41 +61,112 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
 
   // Real-time telemetry state for live camera
   const [liveTelemetry, setLiveTelemetry] = useState({
-    score: 98,
-    eyesOnRoad: true,
+    score: 0,
+    eyesOnRoad: false,
     phoneDetected: false,
-    seatbeltOk: true,
-    drowsiness: 2,
-    faceDetected: true,
-    status: 'safe',
+    seatbeltOk: false,
+    drowsiness: 0,
+    faceDetected: false,
+    status: 'waiting',
     isDistracted: false,
-    topClass: 'c0',
-    className: 'Safe Driving',
-    confidence: 0.98,
+    topClass: 'waiting_for_detection',
+    className: 'Waiting for live YOLO result',
+    confidence: 0,
+    detections: [] as any[],
     alerts: [] as string[],
+    cameraState: 'initializing' as 'initializing' | 'active' | 'denied' | 'not_detected' | 'error',
+    processingState: 'idle' as 'idle' | 'processing' | 'success' | 'error',
+    detectionState: 'waiting' as 'waiting' | 'no_object' | 'object_detected' | 'api_error' | 'camera_unavailable',
+    latencyMs: null as number | null,
+    lastSuccessfulFrameAt: null as number | null,
+    processingError: null as string | null,
+    sessionSummary: null as {
+      current_safety_score: number
+      lowest_session_score: number
+      total_distraction_events: number
+      phone_events: number
+      bottle_events: number
+      cup_events: number
+      total_distracted_duration: number
+      events: Array<{
+        type: string
+        start_time: number
+        end_time: number
+        duration: number
+        max_confidence: number
+        min_score: number
+      }>
+    } | null,
   })
 
+  useEffect(() => {
+    const backendUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000').replace(/\/$/, '')
+    sessionStorage.removeItem(FINAL_SESSION_STORAGE_KEY)
+    void fetch(`${backendUrl}/api/video/session/reset`, { method: 'POST' }).catch(() => undefined)
+  }, [])
 
-  const activeDriver = FLEET_DRIVERS.find(d => d.id === selectedDriverId) || FLEET_DRIVERS[0]
+  const handleTelemetryUpdate = useCallback((newTelemetry: Partial<typeof liveTelemetry>) => {
+    setLiveTelemetry(prev => ({ ...prev, ...newTelemetry }))
+  }, [])
 
-  const filteredDrivers = FLEET_DRIVERS.filter(d => {
-    const matchesSearch = d.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          d.vehicle.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          d.id.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesFilter = filterStatus === 'all' || d.status === filterStatus
-    return matchesSearch && matchesFilter
-  })
+  const detectionStateLabel = {
+    waiting: 'WAITING FOR FRAME',
+    no_object: 'NO OBJECT DETECTED',
+    object_detected: 'OBJECT DETECTED',
+    api_error: 'API / INFERENCE ERROR',
+    camera_unavailable: 'CAMERA UNAVAILABLE',
+  }[liveTelemetry.detectionState]
+
+  const activeDriver = {
+    name: 'Camera Feed',
+    vehicle: 'Live YOLO stream',
+    status: liveTelemetry.detectionState === 'api_error' || liveTelemetry.detectionState === 'camera_unavailable'
+      ? 'alert'
+      : liveTelemetry.cameraState === 'active' ? 'online' : 'offline',
+    events: [
+      {
+        time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        label: liveTelemetry.className,
+        dot: liveTelemetry.isDistracted ? 'bg-rose-500' : 'bg-emerald-500',
+      },
+    ],
+  }
 
   const handleSnapshot = () => {
     toast.success('Snapshot Captured', `Saved live camera frame from ${activeDriver.name} (${activeDriver.vehicle})`)
   }
 
+  const sessionSummary = liveTelemetry.sessionSummary ?? {
+    current_safety_score: liveTelemetry.score,
+    lowest_session_score: liveTelemetry.score,
+    total_distraction_events: 0,
+    phone_events: 0,
+    bottle_events: 0,
+    cup_events: 0,
+    total_distracted_duration: 0,
+    events: [],
+  }
+
   // End Ride Confirmation Action
-  const handleConfirmEndRide = () => {
+  const handleConfirmEndRide = async () => {
     setShowEndRideModal(false)
     toast.success('Ride Ended Successfully', 'Redirecting to AI driving report...')
     const isBiz = user?.role === 'business' || user?.accountType === 'business'
     const targetSummary = isBiz ? '/business/ride-summary' : '/personal/ride-summary'
+    let finalSessionSummary = sessionSummary
+
+    try {
+      const backendUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000').replace(/\/$/, '')
+      const response = await fetch(`${backendUrl}/api/video/session/summary`)
+      if (response.ok) {
+        finalSessionSummary = await response.json()
+      }
+    } catch {
+      // Keep the latest frame summary if the authoritative read is unavailable.
+    }
+
+    sessionStorage.setItem(FINAL_SESSION_STORAGE_KEY, JSON.stringify(finalSessionSummary))
+
     navigate(targetSummary, {
       state: {
         rideData: {
@@ -223,43 +178,8 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
           duration: '1h 13m',
           distance: '48.2 km',
           avgSpeed: '52 km/h',
-          score: liveTelemetry.score,
-          events: {
-            phoneUsage: { detected: liveTelemetry.phoneDetected, duration: liveTelemetry.phoneDetected ? '12 sec' : '0 sec', occurrences: liveTelemetry.phoneDetected ? 1 : 0 },
-            texting: { detected: false, duration: '0 sec', occurrences: 0 },
-            drowsiness: { detected: liveTelemetry.drowsiness > 15, duration: `${liveTelemetry.drowsiness} sec`, occurrences: liveTelemetry.drowsiness > 15 ? 1 : 0 },
-            smoking: { detected: false, duration: '0 sec', occurrences: 0 },
-            seatBelt: liveTelemetry.seatbeltOk ? 'Always Worn (100% Compliant)' : 'Unbuckled during trip',
-            eyesOffRoad: { maxDuration: '2.4 sec', avgAttention: '97%' },
-            handsOnWheel: '95%',
-            yawning: { detected: false },
-          },
-          performance: {
-            focus: liveTelemetry.eyesOnRoad ? 98 : 82,
-            safety: liveTelemetry.score,
-            compliance: liveTelemetry.seatbeltOk ? 100 : 70,
-            attention: liveTelemetry.eyesOnRoad ? 97 : 80,
-            reaction: 93,
-          },
-          incidents: {
-            minor: liveTelemetry.phoneDetected ? 1 : 0,
-            major: 0,
-            critical: 0,
-            nearMisses: 0,
-            safeDrivingPct: liveTelemetry.score,
-          },
-          timeline: activeDriver.events.map(e => ({ time: e.time, label: e.label, type: e.dot.includes('rose') ? 'warning' : 'success' })),
-          aiInsights: [
-            `Overall safety score: ${liveTelemetry.score}/100.`,
-            liveTelemetry.phoneDetected ? 'Phone interaction detected during monitoring.' : 'Zero mobile phone distraction detected.',
-            liveTelemetry.seatbeltOk ? 'Seat belt remained securely fastened.' : 'Seat belt unbuckled warning triggered.',
-            'Fatigue and drowsiness level remained low.',
-          ],
-          recommendations: [
-            'Maintain strong forward eye gaze.',
-            'Keep both hands positioned on steering wheel.',
-            'Continue excellent safety compliance.',
-          ],
+          score: finalSessionSummary.current_safety_score,
+          sessionSummary: finalSessionSummary,
         }
       }
     })
@@ -285,8 +205,13 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
         </div>
 
         <div className="flex items-center gap-3 text-xs font-mono">
-          <span className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/20">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 pulse-dot" /> STREAM LATENCY: 38ms
+          <span className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold border ${
+            liveTelemetry.processingState === 'error'
+              ? 'bg-rose-500/10 text-rose-500 border-rose-500/20'
+              : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+          }`}>
+            <span className={`w-2 h-2 rounded-full ${liveTelemetry.processingState === 'error' ? 'bg-rose-500' : 'bg-emerald-500 pulse-dot'}`} />
+            {liveTelemetry.latencyMs === null ? 'LATENCY: --' : `LATENCY: ${liveTelemetry.latencyMs}ms`}
           </span>
         </div>
       </div>
@@ -298,75 +223,25 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
         <div className="w-full lg:w-72 bg-card border border-border rounded-2xl p-3 shadow-sm flex flex-col gap-2.5 flex-shrink-0 min-h-0 overflow-hidden">
           <div className="flex items-center justify-between border-b border-border pb-2 flex-shrink-0">
             <span className="text-xs font-extrabold uppercase tracking-wider text-on-surface flex items-center gap-2">
-              <UserIcon size={14} className="text-primary" /> Fleet Roster
+              <UserIcon size={14} className="text-primary" /> Detection Feed
             </span>
             <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-bold">
-              {FLEET_DRIVERS.length} Drivers
+              LIVE
             </span>
           </div>
 
-          {/* Filter Chips */}
-          <div className="flex items-center justify-between gap-1 bg-surface p-1 rounded-xl border border-border flex-shrink-0">
-            {(['all', 'online', 'alert', 'offline'] as const).map(st => (
-              <button
-                key={st}
-                onClick={() => setFilterStatus(st)}
-                className={`flex-1 py-1 rounded-lg text-[10px] font-bold capitalize transition-all ${
-                  filterStatus === st
-                    ? 'bg-card text-on-surface shadow-xs border border-border'
-                    : 'text-on-surface-variant hover:text-on-surface'
-                }`}
-              >
-                {st}
-              </button>
-            ))}
-          </div>
-
-          {/* Search Input */}
-          <div className="relative flex-shrink-0">
-            <Search size={14} className="absolute left-3 top-2.5 text-on-surface-variant" />
-            <input
-              type="text"
-              placeholder="Search drivers..."
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-border bg-surface text-xs text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:ring-2 focus:ring-primary/50"
-            />
-          </div>
-
-          {/* Driver Selection List (Internal Scroll Only) */}
-          <div className="space-y-1.5 overflow-y-auto flex-1 pr-1 min-h-0">
-            {filteredDrivers.map(driver => {
-              const isSelected = driver.id === activeDriver.id
-              return (
-                <button
-                  key={driver.id}
-                  onClick={() => setSelectedDriverId(driver.id)}
-                  className={`w-full text-left p-2 rounded-xl border transition-all flex items-center justify-between gap-2 ${
-                    isSelected
-                      ? 'bg-primary/10 border-primary shadow-xs'
-                      : 'bg-surface hover:bg-card border-border'
-                  }`}
-                >
-                  <div className="min-w-0">
-                    <p className={`text-xs font-bold truncate ${isSelected ? 'text-primary' : 'text-on-surface'}`}>
-                      {driver.name}
-                    </p>
-                    <p className="text-[10px] text-on-surface-variant truncate">{driver.vehicle}</p>
-                  </div>
-
-                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase border flex-shrink-0 ${
-                    driver.status === 'online'
-                      ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
-                      : driver.status === 'alert'
-                      ? 'bg-rose-500/10 text-rose-500 border-rose-500/20'
-                      : 'bg-surface text-on-surface-variant border-border'
-                  }`}>
-                    {driver.status}
-                  </span>
-                </button>
-              )
-            })}
+          <div className="rounded-xl border border-border bg-surface p-3 text-xs text-on-surface-variant">
+            <p className="font-bold text-on-surface">{activeDriver.name}</p>
+            <p className="mt-1">{activeDriver.vehicle}</p>
+            <p className={`mt-2 font-mono text-[10px] uppercase ${liveTelemetry.cameraState === 'active' ? 'text-emerald-500' : 'text-amber-500'}`}>
+              CAMERA: {liveTelemetry.cameraState.replace('_', ' ')}
+            </p>
+            <p className={`mt-1 font-mono text-[10px] uppercase ${liveTelemetry.processingState === 'error' ? 'text-rose-500' : 'text-on-surface-variant'}`}>
+              {detectionStateLabel}
+            </p>
+            {liveTelemetry.processingError && (
+              <p className="mt-2 text-[11px] text-rose-500">{liveTelemetry.processingError}</p>
+            )}
           </div>
         </div>
 
@@ -433,7 +308,7 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
             <div className="relative bg-black flex-1 overflow-hidden group min-h-0 h-full w-full">
               <WebcamFeed
                 isRecording={isRecording}
-                onTelemetryUpdate={(newTel) => setLiveTelemetry(prev => ({ ...prev, ...newTel }))}
+                onTelemetryUpdate={handleTelemetryUpdate}
                 className="w-full h-full"
               />
             </div>
@@ -441,7 +316,7 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
             {/* Bottom Status Strip */}
             <div className="px-3 py-1.5 bg-surface border-t border-border flex items-center justify-between text-[11px] text-on-surface-variant font-medium flex-shrink-0">
               <span>VEHICLE: <span className="font-bold text-on-surface">{activeDriver.vehicle}</span></span>
-              <span>SAFETY SCORE: <span className="font-mono font-bold text-emerald-500">{liveTelemetry.score}/100</span></span>
+              <span>SAFETY SCORE: <span className="font-mono font-bold text-emerald-500">{liveTelemetry.status === 'waiting' ? '--' : `${liveTelemetry.score}/100`}</span></span>
             </div>
           </div>
         </div>
@@ -468,7 +343,7 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
             <div className="relative flex-shrink-0">
               <CircularGauge value={liveTelemetry.score} size={68} />
               <div className="absolute inset-0 flex items-center justify-center rotate-[90deg]">
-                <span className="text-xs font-extrabold text-on-surface font-mono">{liveTelemetry.score}%</span>
+                <span className="text-xs font-extrabold text-on-surface font-mono">{liveTelemetry.status === 'waiting' ? '--' : `${liveTelemetry.score}%`}</span>
               </div>
             </div>
             <div>
@@ -476,10 +351,10 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
                 Safety Score
               </span>
               <span className="text-base font-extrabold text-on-surface font-mono">
-                {liveTelemetry.score}<span className="text-xs text-primary font-medium">/100</span>
+                {liveTelemetry.status === 'waiting' ? '--' : <>{liveTelemetry.score}<span className="text-xs text-primary font-medium">/100</span></>}
               </span>
               <p className="text-[10px] text-emerald-500 font-semibold mt-0.5">
-                {liveTelemetry.score >= 90 ? 'High Compliance' : 'Review Advised'}
+                {liveTelemetry.status === 'waiting' ? 'Waiting for live frame' : liveTelemetry.score >= 90 ? 'High Compliance' : 'Review Advised'}
               </p>
             </div>
           </div>
@@ -488,7 +363,7 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
           <div className="space-y-1.5 text-xs">
             <div className="flex items-center justify-between py-1 border-b border-border">
               <span className="text-on-surface-variant text-[11px]">YOLO11 Model</span>
-              <span className="font-bold text-[11px] text-emerald-500 font-mono">yolo11n.pt (detect)</span>
+              <span className="font-bold text-[11px] text-emerald-500 font-mono">Pretrained (detect)</span>
             </div>
 
             <div className="flex items-center justify-between py-1 border-b border-border">
@@ -499,43 +374,57 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
             </div>
 
             <div className="flex items-center justify-between py-1 border-b border-border">
+              <span className="text-on-surface-variant text-[11px]">Frame Processing</span>
+              <span className={`font-bold text-[11px] ${liveTelemetry.processingState === 'error' ? 'text-rose-500' : liveTelemetry.processingState === 'processing' ? 'text-amber-500' : 'text-emerald-500'}`}>
+                {liveTelemetry.processingState === 'processing' ? 'PROCESSING' : liveTelemetry.processingState === 'error' ? 'ERROR' : liveTelemetry.processingState === 'success' ? 'ACTIVE' : 'WAITING'}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between py-1 border-b border-border">
+              <span className="text-on-surface-variant text-[11px]">Last Successful Frame</span>
+              <span className="font-bold text-[11px] text-primary font-mono">
+                {liveTelemetry.lastSuccessfulFrameAt === null ? '--' : new Date(liveTelemetry.lastSuccessfulFrameAt).toLocaleTimeString()}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between py-1 border-b border-border">
               <span className="text-on-surface-variant text-[11px]">AI Confidence</span>
               <span className="font-bold text-[11px] text-primary font-mono">
-                {Math.round((liveTelemetry.confidence || 0.98) * 100)}%
+                {liveTelemetry.status === 'waiting' ? '--' : `${Math.round(liveTelemetry.confidence * 100)}%`}
               </span>
             </div>
 
             <div className="flex items-center justify-between py-1 border-b border-border">
               <span className="text-on-surface-variant text-[11px]">Seat Belt</span>
               <span className={`font-bold text-[11px] flex items-center gap-1 ${liveTelemetry.seatbeltOk ? 'text-emerald-500' : 'text-rose-500'}`}>
-                {liveTelemetry.seatbeltOk ? <CheckCircle2 size={12} /> : <ShieldAlert size={12} />}
-                {liveTelemetry.seatbeltOk ? 'COMPLIANT' : 'UNBUCKLED'}
+                {liveTelemetry.status === 'waiting' ? '--' : liveTelemetry.seatbeltOk ? <CheckCircle2 size={12} /> : <ShieldAlert size={12} />}
+                {liveTelemetry.status === 'waiting' ? 'WAITING' : liveTelemetry.seatbeltOk ? 'COMPLIANT' : 'UNBUCKLED'}
               </span>
             </div>
 
             <div className="flex items-center justify-between py-1 border-b border-border">
               <span className="text-on-surface-variant text-[11px]">Phone Usage</span>
               <span className={`font-bold text-[11px] flex items-center gap-1 ${!liveTelemetry.phoneDetected ? 'text-emerald-500' : 'text-rose-500'}`}>
-                {!liveTelemetry.phoneDetected ? <CheckCircle2 size={12} /> : <Smartphone size={12} />}
-                {!liveTelemetry.phoneDetected ? 'NONE' : 'DETECTED'}
+                {liveTelemetry.status === 'waiting' ? '--' : !liveTelemetry.phoneDetected ? <CheckCircle2 size={12} /> : <Smartphone size={12} />}
+                {liveTelemetry.status === 'waiting' ? 'WAITING' : !liveTelemetry.phoneDetected ? 'NONE' : 'DETECTED'}
               </span>
             </div>
 
             <div className="py-1 border-b border-border space-y-1">
               <div className="flex items-center justify-between">
                 <span className="text-on-surface-variant text-[11px]">Fatigue Risk</span>
-                <span className="font-bold text-[11px] text-emerald-500">{liveTelemetry.drowsiness}%</span>
+                <span className="font-bold text-[11px] text-emerald-500">{liveTelemetry.status === 'waiting' ? '--' : `${liveTelemetry.drowsiness}%`}</span>
               </div>
               <div className="w-full h-1 bg-background rounded-full overflow-hidden">
-                <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${liveTelemetry.drowsiness}%` }} />
+                <div className="h-full bg-emerald-500 rounded-full" style={{ width: liveTelemetry.status === 'waiting' ? '0%' : `${liveTelemetry.drowsiness}%` }} />
               </div>
             </div>
 
             <div className="flex items-center justify-between py-1 border-b border-border">
               <span className="text-on-surface-variant text-[11px]">Eyes on Road</span>
               <span className={`font-bold text-[11px] flex items-center gap-1 ${liveTelemetry.eyesOnRoad ? 'text-emerald-500' : 'text-rose-500'}`}>
-                {liveTelemetry.eyesOnRoad ? <Eye size={12} /> : <AlertTriangle size={12} />}
-                {liveTelemetry.eyesOnRoad ? 'FOCUSED' : 'DISTRACTED'}
+                {liveTelemetry.status === 'waiting' ? '--' : liveTelemetry.eyesOnRoad ? <Eye size={12} /> : <AlertTriangle size={12} />}
+                {liveTelemetry.status === 'waiting' ? 'WAITING' : liveTelemetry.eyesOnRoad ? 'FOCUSED' : 'DISTRACTED'}
               </span>
             </div>
           </div>
@@ -565,15 +454,27 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            {activeDriver.events.map((ev, i) => (
-              <div key={i} className="flex items-center gap-2 p-2 rounded-xl bg-surface border border-border">
-                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ev.dot}`} />
-                <div className="min-w-0">
-                  <p className="text-[11px] font-bold text-on-surface truncate">{ev.label}</p>
-                  <span className="text-[10px] text-on-surface-variant font-mono">{ev.time}</span>
-                </div>
+            <div className="flex items-center gap-2 p-2 rounded-xl bg-surface border border-border">
+              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${liveTelemetry.isDistracted ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold text-on-surface truncate">{liveTelemetry.className}</p>
+                <span className="text-[10px] text-on-surface-variant font-mono">{liveTelemetry.status === 'waiting' ? '--' : `${Math.round(liveTelemetry.confidence * 100)}%`}</span>
               </div>
-            ))}
+            </div>
+            <div className="flex items-center gap-2 p-2 rounded-xl bg-surface border border-border">
+              <span className="w-2 h-2 rounded-full flex-shrink-0 bg-sky-500" />
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold text-on-surface truncate">Status</p>
+                <span className="text-[10px] text-on-surface-variant font-mono">{liveTelemetry.status}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 p-2 rounded-xl bg-surface border border-border">
+              <span className="w-2 h-2 rounded-full flex-shrink-0 bg-violet-500" />
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold text-on-surface truncate">Detections</p>
+                <span className="text-[10px] text-on-surface-variant font-mono">{liveTelemetry.detections?.length ?? 0} objects</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -658,7 +559,7 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
               </button>
             </div>
             <div className="flex-1 relative overflow-hidden">
-              <WebcamFeed isRecording={isRecording} onTelemetryUpdate={(newTel) => setLiveTelemetry(prev => ({ ...prev, ...newTel }))} className="w-full h-full" />
+              <WebcamFeed isRecording={isRecording} onTelemetryUpdate={handleTelemetryUpdate} className="w-full h-full" />
             </div>
           </motion.div>
         )}

@@ -53,8 +53,8 @@ def run_detection_on_image(
 
             x1, y1, x2, y2 = xyxy
 
-            # Highlight phone/distraction in red, other cabin items in green
-            is_distractor = any(kw in cls_name.lower() for kw in ["phone", "cell", "smoke", "distract"])
+            # Highlight distractor objects (phone, bottle, cup) in red, normal cabin items in green
+            is_distractor = any(kw in cls_name.lower() for kw in ["phone", "cell", "bottle", "cup"])
             color = (0, 0, 255) if is_distractor else (0, 255, 0)
 
             # Draw bounding box

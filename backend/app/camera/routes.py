@@ -28,9 +28,28 @@ async def process_frame(body: FrameBody):
 
         result = opencv_processor.process_base64_frame(frame_base64)
         return JSONResponse(result, status_code=200)
+    except ValueError as e:
+        logger.warning("Frame rejected before inference: %s", e)
+        return JSONResponse({'success': False, 'message': 'The submitted frame could not be read.'}, status_code=400)
     except Exception as e:
-        logger.error(f"Error processing video frame: {e}")
-        return JSONResponse({'success': False, 'message': str(e)}, status_code=500)
+        logger.exception("Frame processing/inference failed: %s", e)
+        return JSONResponse(
+            {'success': False, 'message': 'Live detection is temporarily unavailable. Please retry.'},
+            status_code=503,
+        )
+
+
+@camera_router.post('/session/reset')
+async def reset_camera_session():
+    """Starts a fresh in-memory monitoring session."""
+    yolo_service.reset_session()
+    return JSONResponse({'success': True, 'session_summary': yolo_service.get_session_summary()}, status_code=200)
+
+
+@camera_router.get('/session/summary')
+async def camera_session_summary():
+    """Returns the active in-memory monitoring session summary."""
+    return JSONResponse(yolo_service.get_session_summary(), status_code=200)
 
 
 @camera_router.get('/status')

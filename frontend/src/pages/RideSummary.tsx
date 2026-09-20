@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
@@ -6,13 +6,9 @@ import {
   Clock,
   MapPin,
   Shield,
-  Smartphone,
-  Eye,
-  Award,
   Sparkles,
   Download,
   RotateCcw,
-  ShieldAlert,
   Zap,
   User,
   Truck,
@@ -57,13 +53,72 @@ function CircularScoreGauge({ score }: { score: number }) {
   )
 }
 
+type SessionEvent = {
+  type: string
+  start_time: number
+  end_time: number
+  duration: number
+  max_confidence: number
+  min_score: number
+}
+
+type SessionSummary = {
+  current_safety_score: number
+  lowest_session_score: number
+  total_distraction_events: number
+  phone_events: number
+  bottle_events: number
+  cup_events: number
+  total_distracted_duration: number
+  events: SessionEvent[]
+}
+
+const EMPTY_SESSION_SUMMARY: SessionSummary = {
+  current_safety_score: 0,
+  lowest_session_score: 0,
+  total_distraction_events: 0,
+  phone_events: 0,
+  bottle_events: 0,
+  cup_events: 0,
+  total_distracted_duration: 0,
+  events: [],
+}
+
+const FINAL_SESSION_STORAGE_KEY = 'driverguard.final_session_summary'
+
 const RideSummaryPage = memo(function RideSummaryPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const toast = useToast()
 
-  // Use passed location state or default mock session data
+  const navigationSessionSummary = location.state?.rideData?.sessionSummary as SessionSummary | undefined
+  const storedSessionSummary = (() => {
+    try {
+      const stored = sessionStorage.getItem(FINAL_SESSION_STORAGE_KEY)
+      return stored ? JSON.parse(stored) as SessionSummary : undefined
+    } catch {
+      return undefined
+    }
+  })()
+  const initialSessionSummary = navigationSessionSummary || storedSessionSummary
+  const [fetchedSessionSummary, setFetchedSessionSummary] = useState<SessionSummary | null>(initialSessionSummary || null)
+
+  useEffect(() => {
+    if (initialSessionSummary) return
+
+    const backendUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000').replace(/\/$/, '')
+    void fetch(`${backendUrl}/api/video/session/summary`)
+      .then(response => response.ok ? response.json() : null)
+      .then(summary => {
+        if (summary && Array.isArray(summary.events)) {
+          setFetchedSessionSummary(summary as SessionSummary)
+        }
+      })
+      .catch(() => undefined)
+  }, [initialSessionSummary])
+
+  // The report is driven by the monitoring session payload.
   const rideData = location.state?.rideData || {
     driverName: user?.name || 'John Driver',
     vehicle: user?.role === 'business' ? 'Freightliner Cascadia #4082' : 'Tesla Model 3 #9021',
@@ -73,54 +128,15 @@ const RideSummaryPage = memo(function RideSummaryPage() {
     duration: '1h 13m',
     distance: '48.2 km',
     avgSpeed: '52 km/h',
-    score: 96,
-    events: {
-      phoneUsage: { detected: true, duration: '12 sec', occurrences: 1 },
-      texting: { detected: false, duration: '0 sec', occurrences: 0 },
-      drowsiness: { detected: true, duration: '1 min 15 sec', occurrences: 1 },
-      smoking: { detected: false, duration: '0 sec', occurrences: 0 },
-      seatBelt: 'Always Worn (100% Compliant)',
-      eyesOffRoad: { maxDuration: '2.4 sec', avgAttention: '97%' },
-      handsOnWheel: '95%',
-      yawning: { detected: false },
-    },
-    performance: {
-      focus: 98,
-      safety: 95,
-      compliance: 100,
-      attention: 97,
-      reaction: 93,
-    },
-    incidents: {
-      minor: 2,
-      major: 0,
-      critical: 0,
-      nearMisses: 0,
-      safeDrivingPct: 98,
-    },
-    timeline: [
-      { time: '09:15 AM', label: 'Ride Started — Engine Ignition Verified', type: 'start' },
-      { time: '09:22 AM', label: 'Brief Phone Interaction Detected (12s)', type: 'warning' },
-      { time: '09:31 AM', label: 'Eyes Off Road Warning (2.4s)', type: 'warning' },
-      { time: '09:48 AM', label: 'AI Fatigue Scan Passed', type: 'success' },
-      { time: '10:05 AM', label: 'Safe Following Distance Maintained', type: 'success' },
-      { time: '10:15 AM', label: 'Optimal Driving Performance Restored', type: 'success' },
-      { time: '10:28 AM', label: 'Ride Completed & Telemetry Saved', type: 'end' },
-    ],
-    aiInsights: [
-      'Excellent driving overall. You maintained active focus for 97% of the ride.',
-      'One brief phone usage event was detected at 09:22 AM.',
-      'Zero smoking or tobacco usage detected.',
-      'Seat belt remained securely fastened throughout the entire trip.',
-      'Driver fatigue level remained within low safety parameters.',
-    ],
-    recommendations: [
-      'Avoid using or looking at phone while driving.',
-      'Maintain strong forward gaze and eye contact with the road.',
-      'Excellent seat belt compliance! Keep up the safe habit.',
-      'Keep both hands positioned at 9 and 3 on the steering wheel.',
-    ],
+    score: 0,
   }
+
+  const sessionSummary = fetchedSessionSummary || EMPTY_SESSION_SUMMARY
+  const currentScore = sessionSummary.current_safety_score
+  const sessionEvents = sessionSummary.events
+  const formatEventTime = (timestamp: number) => new Date(timestamp * 1000).toLocaleTimeString()
+  const eventDescription = (event: SessionEvent) =>
+    `${event.type} detected for ${event.duration}s (${Math.round(event.max_confidence * 100)}% max confidence; minimum score ${event.min_score}/100).`
 
   const isBiz = user?.role === 'business' || user?.accountType === 'business'
   const monitoringTarget = isBiz ? '/business/monitoring' : '/personal/monitoring'
@@ -237,25 +253,41 @@ const RideSummaryPage = memo(function RideSummaryPage() {
                 <h2 className="text-sm font-extrabold uppercase tracking-wider text-on-surface">Overall AI Safety Score</h2>
               </div>
 
-              <CircularScoreGauge score={rideData.score} />
+              <CircularScoreGauge score={currentScore} />
 
               <div>
                 <span className={`px-3 py-1 rounded-full text-xs font-extrabold uppercase border ${
-                  rideData.score >= 90
+                  currentScore >= 90
                     ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
-                    : rideData.score >= 80
+                    : currentScore >= 80
                     ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
                     : 'bg-rose-500/10 text-rose-500 border-rose-500/20'
                 }`}>
-                  {rideData.score >= 90 ? 'Excellent Compliance' : rideData.score >= 80 ? 'Good Driving' : 'Attention Required'}
+                  Current Session Score: {currentScore}/100
                 </span>
-                <p className="text-xs text-on-surface-variant mt-2 leading-relaxed">
-                  Based on computer vision telemetry and facial distraction analytics.
-                </p>
+              </div>
+
+              <div className="w-full grid grid-cols-2 gap-2 text-left">
+                <div className="p-2 rounded-xl bg-surface border border-border">
+                  <span className="text-[10px] text-on-surface-variant block">Lowest Session Score</span>
+                  <span className="font-mono font-bold text-sm">{sessionSummary.lowest_session_score}/100</span>
+                </div>
+                <div className="p-2 rounded-xl bg-surface border border-border">
+                  <span className="text-[10px] text-on-surface-variant block">Distraction Events</span>
+                  <span className="font-mono font-bold text-sm">{sessionSummary.total_distraction_events}</span>
+                </div>
+                <div className="p-2 rounded-xl bg-surface border border-border">
+                  <span className="text-[10px] text-on-surface-variant block">Phone / Bottle / Cup</span>
+                  <span className="font-mono font-bold text-sm">{sessionSummary.phone_events} / {sessionSummary.bottle_events} / {sessionSummary.cup_events}</span>
+                </div>
+                <div className="p-2 rounded-xl bg-surface border border-border">
+                  <span className="text-[10px] text-on-surface-variant block">Distracted Duration</span>
+                  <span className="font-mono font-bold text-sm">{sessionSummary.total_distracted_duration}s</span>
+                </div>
               </div>
             </motion.div>
 
-            {/* AI Insights & Recommendations Card */}
+            {/* Phase 8 Session Analysis Card */}
             <motion.div
               initial={{ opacity: 0, scale: 0.96 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -265,11 +297,14 @@ const RideSummaryPage = memo(function RideSummaryPage() {
               <div className="space-y-3">
                 <div className="flex items-center gap-2 border-b border-border pb-3">
                   <Sparkles size={18} className="text-primary" />
-                  <h2 className="text-sm font-extrabold uppercase tracking-wider text-on-surface">AI Driving Analysis</h2>
+                  <h2 className="text-sm font-extrabold uppercase tracking-wider text-on-surface">Session Analysis</h2>
                 </div>
 
                 <div className="space-y-2">
-                  {rideData.aiInsights.map((insight: string, idx: number) => (
+                  {(sessionEvents.length === 0
+                    ? ['No confirmed distraction events detected during this session.']
+                    : sessionEvents.map(eventDescription)
+                  ).map((insight: string, idx: number) => (
                     <div key={idx} className="flex items-start gap-2.5 text-xs text-on-surface">
                       <span className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 flex-shrink-0" />
                       <span>{insight}</span>
@@ -278,19 +313,9 @@ const RideSummaryPage = memo(function RideSummaryPage() {
                 </div>
               </div>
 
-              {/* Recommendations Box */}
               <div className="p-4 rounded-2xl bg-surface border border-border space-y-2">
-                <span className="text-[11px] font-extrabold uppercase tracking-wider text-primary flex items-center gap-1.5">
-                  <Award size={14} /> Recommended Action Items
-                </span>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-on-surface-variant">
-                  {rideData.recommendations.map((rec: string, idx: number) => (
-                    <div key={idx} className="flex items-center gap-2">
-                      <CheckCircle2 size={13} className="text-emerald-500 flex-shrink-0" />
-                      <span>{rec}</span>
-                    </div>
-                  ))}
-                </div>
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-primary">Session Score Range</span>
+                <p className="text-xs text-on-surface-variant">Current score {currentScore}/100; lowest recorded score {sessionSummary.lowest_session_score}/100.</p>
               </div>
             </motion.div>
 
@@ -302,163 +327,47 @@ const RideSummaryPage = memo(function RideSummaryPage() {
               <Zap size={18} className="text-primary" /> Detected Telemetry Events
             </h2>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              
-              {/* Phone Usage */}
-              <div className="p-5 rounded-3xl bg-card border border-border shadow-sm space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="h-9 w-9 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-500">
-                    <Smartphone size={18} />
-                  </div>
-                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${
-                    rideData.events.phoneUsage.detected
-                      ? 'bg-rose-500/10 text-rose-500 border-rose-500/20'
-                      : 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
-                  }`}>
-                    {rideData.events.phoneUsage.detected ? 'DETECTED' : 'NONE'}
-                  </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {sessionEvents.length === 0 ? (
+                <div className="sm:col-span-2 lg:col-span-3 p-5 rounded-3xl bg-card border border-border shadow-sm text-xs text-on-surface-variant">
+                  No confirmed distraction events detected during this session.
                 </div>
-                <div>
-                  <h3 className="text-xs font-extrabold text-on-surface">Phone Usage</h3>
-                  <p className="text-[11px] text-on-surface-variant mt-0.5">
-                    Duration: <span className="font-bold text-on-surface">{rideData.events.phoneUsage.duration}</span> • {rideData.events.phoneUsage.occurrences} Event
+              ) : sessionEvents.map((event, index) => (
+                <div key={`${event.type}-${event.start_time}-${index}`} className="p-5 rounded-3xl bg-card border border-border shadow-sm space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-extrabold text-on-surface capitalize">{event.type}</h3>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border bg-rose-500/10 text-rose-500 border-rose-500/20">
+                      CONFIRMED
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-on-surface-variant">{eventDescription(event)}</p>
+                  <p className="text-[11px] text-on-surface-variant">
+                    {formatEventTime(event.start_time)} - {formatEventTime(event.end_time)}
                   </p>
                 </div>
-              </div>
-
-              {/* Drowsiness */}
-              <div className="p-5 rounded-3xl bg-card border border-border shadow-sm space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="h-9 w-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500">
-                    <Eye size={18} />
-                  </div>
-                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${
-                    rideData.events.drowsiness.detected
-                      ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
-                      : 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
-                  }`}>
-                    {rideData.events.drowsiness.detected ? 'DETECTED' : 'LOW'}
-                  </span>
-                </div>
-                <div>
-                  <h3 className="text-xs font-extrabold text-on-surface">Fatigue & Drowsiness</h3>
-                  <p className="text-[11px] text-on-surface-variant mt-0.5">
-                    Duration: <span className="font-bold text-on-surface">{rideData.events.drowsiness.duration}</span> • {rideData.events.drowsiness.occurrences} Event
-                  </p>
-                </div>
-              </div>
-
-              {/* Seat Belt */}
-              <div className="p-5 rounded-3xl bg-card border border-border shadow-sm space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="h-9 w-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500">
-                    <ShieldAlert size={18} />
-                  </div>
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
-                    COMPLIANT
-                  </span>
-                </div>
-                <div>
-                  <h3 className="text-xs font-extrabold text-on-surface">Seat Belt Compliance</h3>
-                  <p className="text-[11px] text-on-surface-variant mt-0.5">{rideData.events.seatBelt}</p>
-                </div>
-              </div>
-
-              {/* Eyes On Road */}
-              <div className="p-5 rounded-3xl bg-card border border-border shadow-sm space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="h-9 w-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-                    <Eye size={18} />
-                  </div>
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border bg-primary/10 text-primary border-primary/20">
-                    {rideData.events.eyesOffRoad.avgAttention}
-                  </span>
-                </div>
-                <div>
-                  <h3 className="text-xs font-extrabold text-on-surface">Eyes On Road</h3>
-                  <p className="text-[11px] text-on-surface-variant mt-0.5">
-                    Max Disengagement: <span className="font-bold text-on-surface">{rideData.events.eyesOffRoad.maxDuration}</span>
-                  </p>
-                </div>
-              </div>
-
+              ))}
             </div>
           </div>
 
-          {/* ━━━ PERFORMANCE PROGRESS BARS & TIMELINE ━━━━━━━━━━━ */}
+          {/* ━━━ SESSION TIMELINE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            
-            {/* Driving Performance Metrics */}
-            <div className="bg-card border border-border rounded-3xl p-6 shadow-md space-y-5">
-              <div className="flex items-center gap-2 border-b border-border pb-3">
-                <TrendingUp size={18} className="text-primary" />
-                <h2 className="text-sm font-extrabold uppercase tracking-wider text-on-surface">Driving Performance Breakdown</h2>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <div className="flex justify-between text-xs font-bold mb-1">
-                    <span className="text-on-surface">Focus & Attention</span>
-                    <span className="text-primary font-mono">{rideData.performance.focus}%</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-surface border border-border overflow-hidden">
-                    <div className="h-full bg-primary rounded-full" style={{ width: `${rideData.performance.focus}%` }} />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between text-xs font-bold mb-1">
-                    <span className="text-on-surface">Safety Score</span>
-                    <span className="text-emerald-500 font-mono">{rideData.performance.safety}%</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-surface border border-border overflow-hidden">
-                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${rideData.performance.safety}%` }} />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between text-xs font-bold mb-1">
-                    <span className="text-on-surface">Seatbelt & Regulatory Compliance</span>
-                    <span className="text-emerald-500 font-mono">{rideData.performance.compliance}%</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-surface border border-border overflow-hidden">
-                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${rideData.performance.compliance}%` }} />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between text-xs font-bold mb-1">
-                    <span className="text-on-surface">Gaze & Attention Index</span>
-                    <span className="text-primary font-mono">{rideData.performance.attention}%</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-surface border border-border overflow-hidden">
-                    <div className="h-full bg-primary rounded-full" style={{ width: `${rideData.performance.attention}%` }} />
-                  </div>
-                </div>
-              </div>
-            </div>
-
             {/* Ride Timeline Card */}
-            <div className="bg-card border border-border rounded-3xl p-6 shadow-md space-y-4">
+            <div className="lg:col-span-2 bg-card border border-border rounded-3xl p-6 shadow-md space-y-4">
               <div className="flex items-center justify-between border-b border-border pb-3">
                 <span className="text-sm font-extrabold uppercase tracking-wider text-on-surface flex items-center gap-2">
                   <Clock size={18} className="text-primary" /> Session Timeline Log
                 </span>
-                <span className="text-xs text-on-surface-variant font-mono">{rideData.timeline.length} Events</span>
+                <span className="text-xs text-on-surface-variant font-mono">{sessionEvents.length} Events</span>
               </div>
 
               <div className="relative pl-6 space-y-4 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-border">
-                {rideData.timeline.map((item: any, idx: number) => (
-                  <div key={idx} className="relative flex items-center justify-between text-xs">
-                    <span className={`absolute -left-6 w-2.5 h-2.5 rounded-full border-2 border-card ${
-                      item.type === 'warning'
-                        ? 'bg-amber-500'
-                        : item.type === 'start' || item.type === 'end'
-                        ? 'bg-primary'
-                        : 'bg-emerald-500'
-                    }`} />
-                    <span className="font-semibold text-on-surface">{item.label}</span>
-                    <span className="font-mono text-[11px] text-on-surface-variant">{item.time}</span>
+                {sessionEvents.length === 0 ? (
+                  <p className="text-xs text-on-surface-variant">No confirmed distraction events detected during this session.</p>
+                ) : sessionEvents.map((event, index) => (
+                  <div key={`${event.type}-${event.start_time}-${index}`} className="relative flex items-center justify-between gap-3 text-xs">
+                    <span className="absolute -left-6 w-2.5 h-2.5 rounded-full border-2 border-card bg-rose-500" />
+                    <span className="font-semibold text-on-surface">{event.type} ({event.duration}s, {Math.round(event.max_confidence * 100)}% max confidence)</span>
+                    <span className="font-mono text-[11px] text-on-surface-variant whitespace-nowrap">{formatEventTime(event.start_time)}</span>
                   </div>
                 ))}
               </div>
