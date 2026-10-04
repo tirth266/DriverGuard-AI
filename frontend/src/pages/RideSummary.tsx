@@ -4,32 +4,81 @@ import { motion } from 'framer-motion'
 import {
   CheckCircle2,
   Clock,
-  MapPin,
   Shield,
-  Sparkles,
-  Download,
+  Smartphone,
+  Coffee,
+  Utensils,
+  ArrowLeftRight,
+  ArrowDown,
+  Eye,
+  Smile,
+  AlertTriangle,
   RotateCcw,
-  Zap,
+  ArrowLeft,
   User,
-  Truck,
-  TrendingUp,
-  Home,
+  PhoneCall,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import DashboardLayout from '../layouts/DashboardLayout'
 import Button from '../components/shared/Button'
-import { useToast } from '../context/ToastContext'
+import { fetchWithAuth, buildApiUrl } from '../services/fleetApi'
+import type { ScoreBreakdown, SessionEvent, SessionSummary } from '../components/dashboard/WebcamFeed'
 
-/* ─── Circular Score Gauge ────────────────────────────────── */
-function CircularScoreGauge({ score }: { score: number }) {
+const EVENT_LABELS: Record<string, string> = {
+  phone_use: 'Phone use',
+  phone_call_suspected: 'Phone call (suspected)',
+  drinking_eating: 'Drinking / eating',
+  eyes_closed: 'Eyes closed',
+  drowsy: 'Drowsy',
+  head_away: 'Head away',
+  head_down: 'Head down',
+  yawn: 'Yawning',
+}
+
+// Landmark inferences carry no detection behind them and are labelled as such.
+const INFERRED_EVENTS = new Set(['phone_call_suspected'])
+
+const EVENT_ICONS: Record<string, typeof Smartphone> = {
+  phone_use: Smartphone,
+  phone_call_suspected: PhoneCall,
+  drinking_eating: Utensils,
+  eyes_closed: Eye,
+  drowsy: Eye,
+  head_away: ArrowLeftRight,
+  head_down: ArrowDown,
+  yawn: Smile,
+}
+
+const EVENT_COLORS: Record<string, string> = {
+  phone_use: '#FF4D67',
+  phone_call_suspected: '#F5B942',
+  drinking_eating: '#FB923C',
+  eyes_closed: '#FF4D67',
+  drowsy: '#FF4D67',
+  head_away: '#F5B942',
+  head_down: '#F5B942',
+  yawn: '#38BDF8',
+}
+
+const GRADE_COLORS: Record<string, { stroke: string; text: string; chip: string }> = {
+  Excellent: { stroke: '#20D98B', text: 'text-safe', chip: 'bg-safe/10 text-safe border-safe/30' },
+  Good: { stroke: '#A3E635', text: 'text-lime-400', chip: 'bg-lime-400/10 text-lime-400 border-lime-400/30' },
+  Fair: { stroke: '#F5B942', text: 'text-warning', chip: 'bg-warning/10 text-warning border-warning/30' },
+  Poor: { stroke: '#FB923C', text: 'text-orange-400', chip: 'bg-orange-400/10 text-orange-400 border-orange-400/30' },
+  Critical: { stroke: '#FF4D67', text: 'text-danger', chip: 'bg-danger/10 text-danger border-danger/30' },
+}
+
+/* ─── Circular score gauge ──────────────────────────────────── */
+
+function CircularScoreGauge({ score, grade }: { score: number; grade: string }) {
   const radius = 54
   const circ = 2 * Math.PI * radius
-  const offset = circ - (score / 100) * circ
-  const color = score >= 90 ? '#10b981' : score >= 80 ? '#f59e0b' : '#f43f5e'
+  const offset = circ - (Math.max(0, Math.min(100, score)) / 100) * circ
+  const color = GRADE_COLORS[grade]?.stroke || '#94A3B8'
 
   return (
     <div className="relative w-36 h-36 flex items-center justify-center">
-      <svg width={144} height={144} className="rotate-[-90deg]">
+      <svg width={144} height={144} className="rotate-[-90deg]" aria-hidden="true">
         <circle cx={72} cy={72} r={radius} fill="none" stroke="currentColor" className="text-border" strokeWidth={10} />
         <motion.circle
           cx={72}
@@ -53,344 +102,424 @@ function CircularScoreGauge({ score }: { score: number }) {
   )
 }
 
-type SessionEvent = {
-  type: string
-  start_time: number
-  end_time: number
-  duration: number
-  max_confidence: number | null
-  min_score: number
+/* ─── Score over time (inline SVG polyline, no chart dependency) ── */
+
+function ScoreChart({
+  timeline,
+  score,
+  durationSeconds,
+  grade,
+}: {
+  timeline: Array<{ offset_seconds: number; score: number }>
+  score: number
+  durationSeconds: number
+  grade: string
+}) {
+  const width = 640
+  const height = 160
+  const padding = 16
+
+  if (timeline.length === 0) {
+    return (
+      <p className="text-xs text-on-surface-variant py-6 text-center">
+        No score samples were recorded. The timeline is sampled every 5 seconds, so it needs a
+        longer monitored session.
+      </p>
+    )
+  }
+
+  const lastOffset = timeline[timeline.length - 1].offset_seconds
+  const span = Math.max(1, durationSeconds, lastOffset)
+
+  const points = [...timeline, { offset_seconds: span, score }].map(sample => {
+    const x = padding + (sample.offset_seconds / span) * (width - padding * 2)
+    const y = height - padding - (Math.max(0, Math.min(100, sample.score)) / 100) * (height - padding * 2)
+    return `${x.toFixed(1)},${y.toFixed(1)}`
+  })
+
+  return (
+    <div className="w-full">
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-40" role="img" aria-label="Safety score over time">
+        {[0, 25, 50, 75, 100].map(mark => {
+          const y = height - padding - (mark / 100) * (height - padding * 2)
+          return (
+            <g key={mark}>
+              <line x1={padding} y1={y} x2={width - padding} y2={y} stroke="currentColor" className="text-border" strokeWidth={1} />
+              <text x={4} y={y + 3} fontSize={9} fill="currentColor" className="text-border">{mark}</text>
+            </g>
+          )
+        })}
+        <polyline
+          points={points.join(' ')}
+          fill="none"
+          strokeWidth={2.5}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          stroke={GRADE_COLORS[grade]?.stroke || '#3B82F6'}
+        />
+      </svg>
+      <div className="flex justify-between text-[10px] font-mono text-on-surface-variant mt-1">
+        <span>0:00</span>
+        <span>{formatDuration(span)}</span>
+      </div>
+    </div>
+  )
 }
 
-type SessionSummary = {
-  current_safety_score: number
-  lowest_session_score: number
-  total_distraction_events: number
-  phone_events: number
-  bottle_events: number
-  cup_events: number
-  total_distracted_duration: number
-  events: SessionEvent[]
+/* ─── Helpers ──────────────────────────────────────────────── */
+
+function formatDuration(seconds: number) {
+  if (!seconds || seconds <= 0) return '0s'
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = Math.floor(seconds % 60)
+  return [h > 0 && `${h}h`, m > 0 && `${m}m`, s > 0 && `${s}s`].filter(Boolean).join(' ') || '0s'
 }
 
-const EMPTY_SESSION_SUMMARY: SessionSummary = {
-  current_safety_score: 0,
-  lowest_session_score: 0,
-  total_distraction_events: 0,
-  phone_events: 0,
-  bottle_events: 0,
-  cup_events: 0,
-  total_distracted_duration: 0,
-  events: [],
+function formatClock(timestamp: number) {
+  return new Date(timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
-const FINAL_SESSION_STORAGE_KEY = 'driverguard.final_session_summary'
+function secondsForType(breakdown: ScoreBreakdown[], type: string) {
+  return breakdown.find(item => item.type === type)?.total_seconds ?? 0
+}
+
+function countForType(breakdown: ScoreBreakdown[], type: string) {
+  return breakdown.find(item => item.type === type)?.count ?? 0
+}
+
+function buildInsights(summary: SessionSummary): string[] {
+  if (summary.total_events === 0) {
+    return ['No confirmed distraction events were recorded, so no points were deducted.']
+  }
+
+  const insights: string[] = []
+  const worst = summary.score_breakdown[0]
+  if (worst) {
+    insights.push(
+      `Most points lost to: ${(EVENT_LABELS[worst.type] || worst.type).toLowerCase()} ` +
+      `(${worst.points_lost} points across ${worst.count} event${worst.count === 1 ? '' : 's'}).`
+    )
+  }
+
+  const phoneSeconds = secondsForType(summary.score_breakdown, 'phone_use')
+  if (phoneSeconds > 0) {
+    insights.push(`Phone use accounted for ${formatDuration(phoneSeconds)} of distracted time.`)
+  }
+
+  const eyeSeconds = secondsForType(summary.score_breakdown, 'eyes_closed') + secondsForType(summary.score_breakdown, 'drowsy')
+  if (eyeSeconds > 0) {
+    insights.push(`Eyes were closed or the driver was drowsy for ${formatDuration(eyeSeconds)}.`)
+  }
+
+  const yawns = countForType(summary.score_breakdown, 'yawn')
+  if (yawns > 0) {
+    insights.push(`${yawns} yawn${yawns === 1 ? '' : 's'} detected.`)
+  }
+
+  insights.push(`Lowest score recorded during the ride: ${summary.lowest_session_score}/100.`)
+  return insights
+}
+
+/* ─── Page ─────────────────────────────────────────────────── */
 
 const RideSummaryPage = memo(function RideSummaryPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const toast = useToast()
 
-  const navigationSessionSummary = location.state?.rideData?.sessionSummary as SessionSummary | undefined
-  const storedSessionSummary = (() => {
-    try {
-      const stored = sessionStorage.getItem(FINAL_SESSION_STORAGE_KEY)
-      return stored ? JSON.parse(stored) as SessionSummary : undefined
-    } catch {
-      return undefined
-    }
-  })()
-  const initialSessionSummary = navigationSessionSummary || storedSessionSummary
-  const [fetchedSessionSummary, setFetchedSessionSummary] = useState<SessionSummary | null>(initialSessionSummary || null)
+  const navigationSummary = location.state?.sessionSummary as SessionSummary | undefined
+  const [summary, setSummary] = useState<SessionSummary | null>(navigationSummary || null)
+  const [loadFailed, setLoadFailed] = useState(false)
 
   useEffect(() => {
-    if (initialSessionSummary) return
+    if (summary) return
 
-    const backendUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000').replace(/\/$/, '')
-    void fetch(`${backendUrl}/api/video/session/summary`)
-      .then(response => response.ok ? response.json() : null)
-      .then(summary => {
-        if (summary && Array.isArray(summary.events)) {
-          setFetchedSessionSummary(summary as SessionSummary)
+    void fetchWithAuth(buildApiUrl('/api/video/session/summary'))
+      .then(data => {
+        if (data && Array.isArray(data.events)) {
+          setSummary(data as SessionSummary)
+        } else {
+          setLoadFailed(true)
         }
       })
-      .catch(() => undefined)
-  }, [initialSessionSummary])
-
-  // The report is driven by the monitoring session payload.
-  const rideData = location.state?.rideData || {
-    driverName: user?.name || 'John Driver',
-    vehicle: user?.role === 'business' ? 'Freightliner Cascadia #4082' : 'Tesla Model 3 #9021',
-    date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-    startTime: '09:15 AM',
-    endTime: '10:28 AM',
-    duration: '1h 13m',
-    distance: '48.2 km',
-    avgSpeed: '52 km/h',
-    score: 0,
-  }
-
-  const sessionSummary = fetchedSessionSummary || EMPTY_SESSION_SUMMARY
-  const currentScore = sessionSummary.current_safety_score
-  const sessionEvents = sessionSummary.events
-  const formatEventTime = (timestamp: number) => new Date(timestamp * 1000).toLocaleTimeString()
-  const eventDescription = (event: SessionEvent) =>
-    `${event.type} detected for ${event.duration}s (${event.max_confidence === null ? 'landmark measurement confidence unavailable' : `${Math.round(event.max_confidence * 100)}% max confidence`}; minimum score ${event.min_score}/100).`
+      .catch(() => setLoadFailed(true))
+  }, [summary])
 
   const isBiz = user?.role === 'business' || user?.accountType === 'business'
   const monitoringTarget = isBiz ? '/business/monitoring' : '/personal/monitoring'
 
-  const handleDownload = () => {
-    toast.info('Downloading Summary Report', 'Preparing PDF report for download...')
+  if (loadFailed) {
+    return (
+      <DashboardLayout>
+        <div className="w-full h-full max-h-full overflow-y-auto p-4 md:p-8 text-on-surface">
+          <div className="max-w-2xl mx-auto mt-16 p-6 rounded-3xl bg-card border border-border shadow-md text-center space-y-3">
+            <AlertTriangle size={28} className="mx-auto text-danger" />
+            <h1 className="text-base font-extrabold">Ride report unavailable</h1>
+            <p className="text-xs text-on-surface-variant leading-relaxed">
+              The ride summary could not be read from the detection service, so no score is shown.
+              Reconnect the backend and reload the report.
+            </p>
+            <Button variant="secondary" size="md" onClick={() => navigate(monitoringTarget)} className="inline-flex items-center gap-2">
+              <ArrowLeft size={15} /> Back to Dashboard
+            </Button>
+          </div>
+        </div>
+      </DashboardLayout>
+    )
   }
+
+  if (!summary) {
+    return (
+      <DashboardLayout>
+        <div className="w-full h-full max-h-full overflow-y-auto p-4 md:p-8 text-on-surface flex items-center justify-center">
+          <p className="text-xs font-mono text-on-surface-variant">LOADING RIDE SUMMARY...</p>
+        </div>
+      </DashboardLayout>
+    )
+  }
+
+  const grade = summary.grade
+  const isCleanRide = summary.total_events === 0
+  const maxPointsLost = Math.max(1, ...summary.score_breakdown.map(item => item.points_lost))
+  const stats = [
+    { label: 'Total events', value: String(summary.total_events), icon: AlertTriangle },
+    { label: 'Phone time', value: formatDuration(secondsForType(summary.score_breakdown, 'phone_use')), icon: Smartphone },
+    { label: 'Eyes closed', value: formatDuration(secondsForType(summary.score_breakdown, 'eyes_closed') + secondsForType(summary.score_breakdown, 'drowsy')), icon: Eye },
+    { label: 'Head away', value: formatDuration(secondsForType(summary.score_breakdown, 'head_away') + secondsForType(summary.score_breakdown, 'head_down')), icon: ArrowLeftRight },
+    { label: 'Yawns', value: String(countForType(summary.score_breakdown, 'yawn')), icon: Smile },
+    { label: 'Food / drink', value: String(countForType(summary.score_breakdown, 'drinking_eating')), icon: Coffee },
+  ]
 
   return (
     <DashboardLayout>
       <div className="w-full h-full max-h-full overflow-y-auto p-4 md:p-8 text-on-surface transition-colors duration-300">
-        <div className="max-w-6xl mx-auto space-y-8 pb-12">
+        <div className="max-w-6xl mx-auto space-y-6 pb-12">
 
-          {/* ━━━ TOP SUCCESS BANNER & METADATA GRID ━━━━━━━━━━━━━ */}
-          <motion.div
+          {/* ━━━ HEADER ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+          <motion.header
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4 }}
-            className="bg-card border border-border rounded-3xl p-6 md:p-8 shadow-xl relative overflow-hidden space-y-6"
+            className="bg-card border border-border rounded-3xl p-6 shadow-md"
           >
-            {/* Ambient Green Glow */}
-            <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-[100px] pointer-events-none" />
-
-            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex items-center gap-4">
-                <div className="h-14 w-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500 shadow-sm flex-shrink-0">
-                  <CheckCircle2 size={32} />
+                <div className="h-12 w-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary flex-shrink-0">
+                  <Shield size={24} />
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
-                    <span className="px-3 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-extrabold border border-emerald-500/20 uppercase tracking-wider">
-                      Ride Summary
-                    </span>
-                    <span className="text-xs text-on-surface-variant font-mono">{rideData.date}</span>
-                  </div>
-                  <h1 className="text-2xl md:text-3xl font-extrabold text-on-surface tracking-tight mt-1">
-                    Ride Completed Successfully
-                  </h1>
-                  <p className="text-xs md:text-sm text-on-surface-variant mt-0.5">
-                    Your driving session has been completed successfully. Here is your complete AI driving report.
+                  <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-extrabold border border-primary/20 uppercase tracking-wider">
+                    Ride Summary
+                  </span>
+                  <h1 className="text-xl md:text-2xl font-extrabold tracking-tight mt-1">Ride Completed</h1>
+                  <p className="text-xs text-on-surface-variant mt-0.5 inline-flex items-center gap-2">
+                    <User size={12} /> {user?.name || 'Personal Driver'}
+                    <span className="text-border">|</span>
+                    <Clock size={12} /> {formatDuration(summary.duration_seconds)} monitored
                   </p>
                 </div>
               </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center gap-3 flex-wrap">
-                <Button variant="secondary" size="md" onClick={() => navigate(monitoringTarget)} className="flex items-center gap-2">
-                  <RotateCcw size={16} /> Start New Ride
-                </Button>
-                <Button variant="primary" size="md" onClick={() => navigate('/')} className="flex items-center gap-2">
-                  <Home size={16} /> Return to Home
-                </Button>
-              </div>
+              <span className={`px-3 py-1 rounded-full text-xs font-extrabold uppercase border ${GRADE_COLORS[grade]?.chip || 'bg-border text-on-surface-variant border-border'}`}>
+                {grade}
+              </span>
             </div>
+          </motion.header>
 
-            {/* Quick Metadata Stats Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
-              <div className="p-3 rounded-2xl bg-surface border border-border">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant flex items-center gap-1">
-                  <User size={12} className="text-primary" /> Driver
-                </span>
-                <p className="text-xs font-extrabold text-on-surface truncate mt-1">{rideData.driverName}</p>
-              </div>
-
-              <div className="p-3 rounded-2xl bg-surface border border-border">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant flex items-center gap-1">
-                  <Truck size={12} className="text-primary" /> Vehicle
-                </span>
-                <p className="text-xs font-extrabold text-on-surface truncate mt-1">{rideData.vehicle}</p>
-              </div>
-
-              <div className="p-3 rounded-2xl bg-surface border border-border">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant flex items-center gap-1">
-                  <Clock size={12} className="text-primary" /> Duration
-                </span>
-                <p className="text-xs font-extrabold text-on-surface font-mono mt-1">{rideData.duration}</p>
-              </div>
-
-              <div className="p-3 rounded-2xl bg-surface border border-border">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant flex items-center gap-1">
-                  <MapPin size={12} className="text-primary" /> Distance
-                </span>
-                <p className="text-xs font-extrabold text-on-surface font-mono mt-1">{rideData.distance}</p>
-              </div>
-
-              <div className="p-3 rounded-2xl bg-surface border border-border">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant flex items-center gap-1">
-                  <TrendingUp size={12} className="text-primary" /> Avg Speed
-                </span>
-                <p className="text-xs font-extrabold text-on-surface font-mono mt-1">{rideData.avgSpeed}</p>
-              </div>
-
-              <div className="p-3 rounded-2xl bg-surface border border-border">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant flex items-center gap-1">
-                  <Clock size={12} className="text-primary" /> Time Window
-                </span>
-                <p className="text-xs font-extrabold text-on-surface font-mono mt-1">{rideData.startTime} - {rideData.endTime}</p>
-              </div>
-            </div>
-          </motion.div>
-
-          {/* ━━━ SCORE & AI INSIGHTS GRID ━━━━━━━━━━━━━━━━━━━━━ */}
+          {/* ━━━ SCORE + STAT CARDS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-            {/* AI Safety Score Card */}
             <motion.div
               initial={{ opacity: 0, scale: 0.96 }}
               animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.4, delay: 0.1 }}
-              className="bg-card border border-border rounded-3xl p-6 shadow-md flex flex-col items-center justify-center text-center space-y-4"
+              transition={{ duration: 0.4, delay: 0.05 }}
+              className="bg-card border border-border rounded-3xl p-6 shadow-md flex flex-col items-center justify-center gap-3 text-center"
             >
-              <div className="flex items-center gap-2">
-                <Shield size={18} className="text-primary" />
-                <h2 className="text-sm font-extrabold uppercase tracking-wider text-on-surface">Overall AI Safety Score</h2>
-              </div>
-
-              <CircularScoreGauge score={currentScore} />
-
-              <div>
-                <span className={`px-3 py-1 rounded-full text-xs font-extrabold uppercase border ${
-                  currentScore >= 90
-                    ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
-                    : currentScore >= 80
-                    ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
-                    : 'bg-rose-500/10 text-rose-500 border-rose-500/20'
-                }`}>
-                  Current Session Score: {currentScore}/100
-                </span>
-              </div>
-
-              <div className="w-full grid grid-cols-2 gap-2 text-left">
-                <div className="p-2 rounded-xl bg-surface border border-border">
-                  <span className="text-[10px] text-on-surface-variant block">Lowest Session Score</span>
-                  <span className="font-mono font-bold text-sm">{sessionSummary.lowest_session_score}/100</span>
+              <h2 className="text-xs font-extrabold uppercase tracking-wider text-on-surface-variant">Final Safety Score</h2>
+              <CircularScoreGauge score={summary.final_score} grade={grade} />
+              <div className="grid grid-cols-2 gap-2 w-full">
+                <div className="p-2 rounded-xl bg-surface border border-border text-left">
+                  <span className="text-[10px] text-on-surface-variant block">Lowest score</span>
+                  <span className="font-mono font-bold text-sm">{summary.lowest_session_score}/100</span>
                 </div>
-                <div className="p-2 rounded-xl bg-surface border border-border">
-                  <span className="text-[10px] text-on-surface-variant block">Distraction Events</span>
-                  <span className="font-mono font-bold text-sm">{sessionSummary.total_distraction_events}</span>
-                </div>
-                <div className="p-2 rounded-xl bg-surface border border-border">
-                  <span className="text-[10px] text-on-surface-variant block">Phone / Bottle / Cup</span>
-                  <span className="font-mono font-bold text-sm">{sessionSummary.phone_events} / {sessionSummary.bottle_events} / {sessionSummary.cup_events}</span>
-                </div>
-                <div className="p-2 rounded-xl bg-surface border border-border">
-                  <span className="text-[10px] text-on-surface-variant block">Distracted Duration</span>
-                  <span className="font-mono font-bold text-sm">{sessionSummary.total_distracted_duration}s</span>
+                <div className="p-2 rounded-xl bg-surface border border-border text-left">
+                  <span className="text-[10px] text-on-surface-variant block">Points lost</span>
+                  <span className="font-mono font-bold text-sm">{summary.points_lost}</span>
                 </div>
               </div>
             </motion.div>
 
-            {/* Phase 8 Session Analysis Card */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.96 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.4, delay: 0.15 }}
-              className="lg:col-span-2 bg-card border border-border rounded-3xl p-6 shadow-md space-y-5 flex flex-col justify-between"
-            >
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 border-b border-border pb-3">
-                  <Sparkles size={18} className="text-primary" />
-                  <h2 className="text-sm font-extrabold uppercase tracking-wider text-on-surface">Session Analysis</h2>
-                </div>
-
-                <div className="space-y-2">
-                  {(sessionEvents.length === 0
-                    ? ['No confirmed distraction events detected during this session.']
-                    : sessionEvents.map(eventDescription)
-                  ).map((insight: string, idx: number) => (
-                    <div key={idx} className="flex items-start gap-2.5 text-xs text-on-surface">
-                      <span className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 flex-shrink-0" />
-                      <span>{insight}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="p-4 rounded-2xl bg-surface border border-border space-y-2">
-                <span className="text-[11px] font-extrabold uppercase tracking-wider text-primary">Session Score Range</span>
-                <p className="text-xs text-on-surface-variant">Current score {currentScore}/100; lowest recorded score {sessionSummary.lowest_session_score}/100.</p>
-              </div>
-            </motion.div>
-
-          </div>
-
-          {/* ━━━ DETECTED EVENTS METRICS CARDS ━━━━━━━━━━━━━━━━ */}
-          <div className="space-y-4">
-            <h2 className="text-base font-extrabold text-on-surface tracking-tight flex items-center gap-2">
-              <Zap size={18} className="text-primary" /> Detected Telemetry Events
-            </h2>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {sessionEvents.length === 0 ? (
-                <div className="sm:col-span-2 lg:col-span-3 p-5 rounded-3xl bg-card border border-border shadow-sm text-xs text-on-surface-variant">
-                  No confirmed distraction events detected during this session.
-                </div>
-              ) : sessionEvents.map((event, index) => (
-                <div key={`${event.type}-${event.start_time}-${index}`} className="p-5 rounded-3xl bg-card border border-border shadow-sm space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-extrabold text-on-surface capitalize">{event.type}</h3>
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border bg-rose-500/10 text-rose-500 border-rose-500/20">
-                      CONFIRMED
+            <div className="lg:col-span-2 grid grid-cols-2 sm:grid-cols-3 gap-3 content-start">
+              {stats.map(stat => {
+                const Icon = stat.icon
+                return (
+                  <div key={stat.label} className="bg-card border border-border rounded-2xl p-3.5 shadow-sm">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant inline-flex items-center gap-1">
+                      <Icon size={11} className="text-primary" /> {stat.label}
                     </span>
+                    <p className="text-base font-extrabold font-mono mt-1.5">{stat.value}</p>
                   </div>
-                  <p className="text-[11px] text-on-surface-variant">{eventDescription(event)}</p>
-                  <p className="text-[11px] text-on-surface-variant">
-                    {formatEventTime(event.start_time)} - {formatEventTime(event.end_time)}
-                  </p>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
 
-          {/* ━━━ SESSION TIMELINE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+          {/* ━━━ SCORE OVER TIME ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+          <motion.section
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.1 }}
+            className="bg-card border border-border rounded-3xl p-6 shadow-md space-y-3"
+          >
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <span className="text-xs font-extrabold uppercase tracking-wider text-on-surface inline-flex items-center gap-2">
+                <Clock size={15} className="text-primary" /> Score Over Time
+              </span>
+              <span className="text-[10px] font-mono text-on-surface-variant">
+                {summary.score_timeline.length} samples · every 5s
+              </span>
+            </div>
+            <ScoreChart
+              timeline={summary.score_timeline}
+              score={summary.final_score}
+              durationSeconds={summary.duration_seconds}
+              grade={grade}
+            />
+          </motion.section>
+
+          {/* ━━━ BREAKDOWN + INSIGHTS ━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Ride Timeline Card */}
-            <div className="lg:col-span-2 bg-card border border-border rounded-3xl p-6 shadow-md space-y-4">
-              <div className="flex items-center justify-between border-b border-border pb-3">
-                <span className="text-sm font-extrabold uppercase tracking-wider text-on-surface flex items-center gap-2">
-                  <Clock size={18} className="text-primary" /> Session Timeline Log
-                </span>
-                <span className="text-xs text-on-surface-variant font-mono">{sessionEvents.length} Events</span>
-              </div>
-
-              <div className="relative pl-6 space-y-4 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-border">
-                {sessionEvents.length === 0 ? (
-                  <p className="text-xs text-on-surface-variant">No confirmed distraction events detected during this session.</p>
-                ) : sessionEvents.map((event, index) => (
-                  <div key={`${event.type}-${event.start_time}-${index}`} className="relative flex items-center justify-between gap-3 text-xs">
-                    <span className="absolute -left-6 w-2.5 h-2.5 rounded-full border-2 border-card bg-rose-500" />
-                    <span className="font-semibold text-on-surface">{event.type} ({event.duration}s, {event.max_confidence === null ? 'landmark measurement confidence unavailable' : `${Math.round(event.max_confidence * 100)}% max confidence`})</span>
-                    <span className="font-mono text-[11px] text-on-surface-variant whitespace-nowrap">{formatEventTime(event.start_time)}</span>
+            <motion.section
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.15 }}
+              className="bg-card border border-border rounded-3xl p-6 shadow-md space-y-4"
+            >
+              <h2 className="text-xs font-extrabold uppercase tracking-wider text-on-surface border-b border-border pb-3">
+                Points Lost by Event Type
+              </h2>
+              {isCleanRide ? (
+                <div className="flex items-center gap-3 rounded-2xl bg-safe/5 border border-safe/25 px-4 py-5">
+                  <CheckCircle2 size={22} className="text-safe flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-extrabold text-safe">Clean ride</p>
+                    <p className="text-xs text-on-surface-variant mt-0.5">No confirmed events, no points deducted.</p>
                   </div>
-                ))}
-              </div>
-            </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {summary.score_breakdown.map(item => {
+                    const Icon = EVENT_ICONS[item.type] || AlertTriangle
+                    const color = EVENT_COLORS[item.type] || '#FF4D67'
+                    return (
+                        <div key={item.type} className="space-y-1">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="inline-flex items-center gap-1.5 text-on-surface font-semibold">
+                            <Icon size={12} style={{ color }} />
+                            {EVENT_LABELS[item.type] || item.type}
+                            {INFERRED_EVENTS.has(item.type) && (
+                              <span className="text-[9px] font-mono font-bold uppercase px-1 rounded border border-warning/40 text-warning">
+                                suspected
+                              </span>
+                            )}
+                          </span>
+                          <span className="font-mono text-on-surface-variant">
+                            {item.count}× · {formatDuration(item.total_seconds)} · −{item.points_lost} pts
+                          </span>
+                        </div>
+                        <div className="h-2 rounded-full bg-surface overflow-hidden">
+                          <div
+                            className="h-full rounded-full"
+                            style={{ width: `${(item.points_lost / maxPointsLost) * 100}%`, backgroundColor: color }}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </motion.section>
 
+            <motion.section
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.2 }}
+              className="bg-card border border-border rounded-3xl p-6 shadow-md space-y-4"
+            >
+              <h2 className="text-xs font-extrabold uppercase tracking-wider text-on-surface border-b border-border pb-3">
+                Insights
+              </h2>
+              <ul className="space-y-2">
+                {buildInsights(summary).map((insight, index) => (
+                  <li key={index} className="flex items-start gap-2.5 text-xs text-on-surface">
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 flex-shrink-0" />
+                    <span>{insight}</span>
+                  </li>
+                ))}
+              </ul>
+            </motion.section>
           </div>
 
-          {/* ━━━ FOOTER ACTION BUTTONS ━━━━━━━━━━━━━━━━━━━━━━━ */}
-          <div className="flex flex-wrap items-center justify-between gap-4 pt-6 border-t border-border">
-            <div className="flex items-center gap-3">
-              <Button variant="secondary" size="md" onClick={handleDownload} className="flex items-center gap-2">
-                <Download size={16} /> Download Report (PDF)
-              </Button>
+          {/* ━━━ EVENT TIMELINE TABLE ━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+          <motion.section
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.25 }}
+            className="bg-card border border-border rounded-3xl p-6 shadow-md space-y-3"
+          >
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <span className="text-xs font-extrabold uppercase tracking-wider text-on-surface">Event Timeline</span>
+              <span className="text-[10px] font-mono text-on-surface-variant">{summary.total_events} events</span>
             </div>
+            {isCleanRide ? (
+              <p className="text-xs text-on-surface-variant">No confirmed distraction events were recorded during this ride.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="text-[10px] uppercase tracking-wider text-on-surface-variant">
+                      <th className="py-2 font-bold">Event</th>
+                      <th className="py-2 font-bold">Started</th>
+                      <th className="py-2 font-bold">Duration</th>
+                      <th className="py-2 font-bold text-right">Max confidence</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...summary.events].sort((a: SessionEvent, b: SessionEvent) => a.start_time - b.start_time).map((event, index) => {
+                      const Icon = EVENT_ICONS[event.type] || AlertTriangle
+                      const color = EVENT_COLORS[event.type] || '#FF4D67'
+                      return (
+                        <tr key={`${event.type}-${event.start_time}-${index}`} className="border-t border-border/60">
+                          <td className="py-2">
+                            <span
+                              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full font-mono text-[10px] font-bold border"
+                              style={{ color, borderColor: `${color}55`, backgroundColor: `${color}14` }}
+                            >
+                              <Icon size={11} />
+                              {EVENT_LABELS[event.type] || event.type}
+                            </span>
+                          </td>
+                          <td className="py-2 font-mono text-on-surface-variant">{formatClock(event.start_time)}</td>
+                          <td className="py-2 font-mono">{event.duration.toFixed(1)}s</td>
+                          <td className="py-2 font-mono text-right text-on-surface-variant">
+                            {event.max_confidence === null ? 'landmark based' : `${Math.round(event.max_confidence * 100)}%`}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </motion.section>
 
-            <div className="flex items-center gap-3">
-              <Button variant="secondary" size="md" onClick={() => navigate(monitoringTarget)} className="flex items-center gap-2">
-                <RotateCcw size={16} /> Start New Ride
-              </Button>
-              <Button variant="primary" size="md" onClick={() => navigate('/')} className="flex items-center gap-2">
-                <Home size={16} /> Return to Home
-              </Button>
-            </div>
+          {/* ━━━ ACTIONS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+          <div className="flex flex-wrap items-center justify-between gap-4 pt-2 border-t border-border">
+            <Button variant="secondary" size="md" onClick={() => navigate(monitoringTarget)} className="inline-flex items-center gap-2">
+              <ArrowLeft size={15} /> Back to Dashboard
+            </Button>
+            <Button variant="primary" size="md" onClick={() => navigate(monitoringTarget)} className="inline-flex items-center gap-2">
+              <RotateCcw size={15} /> Start New Ride
+            </Button>
           </div>
 
         </div>

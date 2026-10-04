@@ -1,4 +1,4 @@
-import { memo, useState } from 'react'
+import { memo, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
@@ -12,9 +12,11 @@ import {
   Save,
   ArrowLeft,
   MailCheck,
+  Loader2,
 } from 'lucide-react'
 import MainLayout from '../layouts/MainLayout'
 import { useToast } from '../context/ToastContext'
+import { driverApi, vehicleApi, type Vehicle } from '../services/fleetApi'
 
 interface DriverFormState {
   // Driver Info
@@ -78,6 +80,15 @@ const AddDriverPage = memo(function AddDriverPage() {
   const toast = useToast()
   const [form, setForm] = useState<DriverFormState>(INITIAL_FORM)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [vehicles, setVehicles] = useState<Vehicle[]>([])
+  const [loadingVehicles, setLoadingVehicles] = useState(true)
+
+  useEffect(() => {
+    vehicleApi.list(1, 100).then(res => {
+      if (res.success) setVehicles(res.items)
+      setLoadingVehicles(false)
+    }).catch(() => setLoadingVehicles(false))
+  }, [])
 
   const handleChange = (key: keyof DriverFormState, value: string) => {
     setForm(prev => ({ ...prev, [key]: value }))
@@ -95,10 +106,34 @@ const AddDriverPage = memo(function AddDriverPage() {
       return
     }
     setIsSubmitting(true)
-    await new Promise(r => setTimeout(r, 700))
-    setIsSubmitting(false)
-    toast.success('Driver Added Successfully', `${form.fullName} profile created. Invitation email sent to ${form.email}.`)
-    navigate('/fleet')
+    try {
+      const res = await driverApi.create({
+        full_name: form.fullName,
+        email: form.email,
+        phone: form.phone || undefined,
+        employee_id: form.employeeId || undefined,
+        date_of_birth: form.dob || undefined,
+        gender: form.gender || undefined,
+        license_number: form.licenseNumber || undefined,
+        license_expiry: form.licenseExpiry || undefined,
+        experience_years: form.experienceYears ? parseInt(form.experienceYears) : undefined,
+        driver_type: form.driverType || undefined,
+        vehicle_number: form.vehicleNumber || undefined,
+        department: form.department || undefined,
+        emergency_contact_name: form.emergencyName || undefined,
+        emergency_contact_phone: form.emergencyPhone || undefined,
+        emergency_contact_relationship: form.emergencyRelationship || undefined,
+        photo_url: form.photoUrl || undefined,
+      })
+      if (res.success) {
+        toast.success('Driver Added Successfully', `${form.fullName} profile created.`)
+        navigate('/fleet')
+      }
+    } catch (err) {
+      toast.error('Failed to add driver', err instanceof Error ? err.message : 'Unknown error')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -354,12 +389,14 @@ const AddDriverPage = memo(function AddDriverPage() {
                   value={form.assignedVehicle}
                   onChange={e => handleChange('assignedVehicle', e.target.value)}
                   className={inputClass + ' cursor-pointer'}
+                  disabled={loadingVehicles}
                 >
-                  <option value="Freightliner Cascadia">Freightliner Cascadia</option>
-                  <option value="Kenworth T680">Kenworth T680</option>
-                  <option value="Volvo VNL 860">Volvo VNL 860</option>
-                  <option value="Peterbilt 579">Peterbilt 579</option>
-                  <option value="Mack Anthem">Mack Anthem</option>
+                  <option value="">Select vehicle...</option>
+                  {vehicles.map(v => (
+                    <option key={v.id} value={`${v.manufacturer || ''} ${v.model || ''}`.trim() || v.vehicle_number}>
+                      {`${v.manufacturer || ''} ${v.model || ''}`.trim() || v.vehicle_number} (#${v.vehicle_number})
+                    </option>
+                  ))}
                   <option value="Unassigned">Unassigned / Standby</option>
                 </select>
               </div>
@@ -470,7 +507,7 @@ const AddDriverPage = memo(function AddDriverPage() {
                 className="px-6 py-2.5 rounded-xl bg-primary text-white text-xs font-bold hover:opacity-90 transition-opacity flex items-center gap-2 shadow-md disabled:opacity-60"
               >
                 {isSubmitting ? (
-                  <><div className="w-3.5 h-3.5 rounded-full border-2 border-white/40 border-t-white animate-spin" /> Saving...</>
+                  <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving...</>
                 ) : (
                   <><Save size={15} /> Save Driver</>
                 )}

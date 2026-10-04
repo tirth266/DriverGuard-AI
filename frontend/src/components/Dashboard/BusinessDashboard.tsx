@@ -1,4 +1,4 @@
-import { memo, useState, useEffect } from 'react'
+import { memo, useState, useEffect, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -19,11 +19,13 @@ import {
   X,
   PanelLeftClose,
   PanelLeftOpen,
+  Loader2,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
+import { driverApi, vehicleApi, type Driver, type Vehicle } from '../../services/fleetApi'
 
-/* ─── Types & Mock Data ───────────────────────────────────── */
+/* ─── Types ───────────────────────────────────── */
 
 interface DriverItem {
   id: string
@@ -35,20 +37,12 @@ interface DriverItem {
   tripsToday: number
 }
 
-const DRIVERS: DriverItem[] = [
-  { id: 'DRV-101', name: 'John Driver', vehicle: 'Freightliner Cascadia #4082', status: 'online', score: 98, tripsToday: 4 },
-  { id: 'DRV-102', name: 'Marcus Vance', vehicle: 'Kenworth T680 #2014', status: 'alert', score: 74, lastAlert: 'Fatigue warning 12m ago', tripsToday: 3 },
-  { id: 'DRV-103', name: 'Elena Rostova', vehicle: 'Volvo VNL 860 #1093', status: 'online', score: 95, tripsToday: 5 },
-  { id: 'DRV-104', name: 'David Miller', vehicle: 'Peterbilt 579 #3021', status: 'offline', score: 91, tripsToday: 2 },
-  { id: 'DRV-105', name: 'Samantha Reed', vehicle: 'Mack Anthem #5012', status: 'online', score: 99, tripsToday: 6 },
-]
-
-const RECENT_ACTIVITIES = [
-  { time: '11:15 AM', type: 'alert', text: 'Fatigue alert flagged for Marcus Vance (Kenworth #2014)', color: 'text-warning' },
-  { time: '11:02 AM', type: 'safe', text: 'Safe Driving Restored: Elena Rostova (Volvo #1093)', color: 'text-safe' },
-  { time: '10:45 AM', type: 'info', text: 'Shift Started: Samantha Reed assigned to Mack Anthem #5012', color: 'text-brand' },
-  { time: '10:12 AM', type: 'alert', text: 'Phone Usage Resolved: John Driver (Cascadia #4082)', color: 'text-safe' },
-]
+interface RecentActivity {
+  time: string
+  type: 'alert' | 'safe' | 'info'
+  text: string
+  color: string
+}
 
 /* ─── Sidebar Nav Items ───────────────────────────────────── */
 
@@ -65,6 +59,34 @@ const SIDEBAR_ITEMS = [
 const DEFAULT_INVITE_MESSAGE =
   'Welcome to DriverGuard AI.\nClick the link below to connect your driver credentials.'
 
+function mapDriverToItem(driver: Driver, vehicles: Vehicle[]): DriverItem {
+  const vehicle = vehicles.find(v => v.id === driver.assigned_vehicle_id)
+  const vehicleName = vehicle ? `${vehicle.manufacturer || ''} ${vehicle.model || ''} #${vehicle.vehicle_number}`.trim() : 'Unassigned'
+  
+  // Use is_active for status, default to offline
+  const status = driver.is_active ? 'online' : 'offline'
+  
+  return {
+    id: `DRV-${driver.id.toString().padStart(3, '0')}`,
+    name: driver.full_name,
+    vehicle: vehicleName,
+    status,
+    score: 95, // Would come from ride history in a real implementation
+    lastAlert: undefined,
+    tripsToday: 0,
+  }
+}
+
+function mapRecentActivities(drivers: DriverItem[]): RecentActivity[] {
+  // In a real implementation, this would come from ride events/alerts
+  return drivers.slice(0, 3).map((d, i) => ({
+    time: new Date(Date.now() - i * 15 * 60 * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+    type: 'info' as const,
+    text: `${d.name} ${d.status === 'online' ? 'is active' : 'is offline'}`,
+    color: 'text-brand',
+  }))
+}
+
 export default memo(function BusinessDashboard() {
   const { logout } = useAuth()
   const navigate = useNavigate()
@@ -72,6 +94,12 @@ export default memo(function BusinessDashboard() {
   const toast = useToast()
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+
+  // Real API data state
+  const [drivers, setDrivers] = useState<Driver[]>([])
+  const [vehicles, setVehicles] = useState<Vehicle[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   // Modals & form state
   const [inviteModalOpen, setInviteModalOpen] = useState(false)
@@ -84,6 +112,28 @@ export default memo(function BusinessDashboard() {
   // Driver Table search & filter
   const [searchTerm, setSearchTerm] = useState('')
   const [filterStatus, setFilterStatus] = useState<'all' | 'online' | 'offline' | 'alert'>('all')
+
+  // Load data from API
+  const loadFleetData = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const [driversRes, vehiclesRes] = await Promise.all([
+        driverApi.list(1, 100),
+        vehicleApi.list(1, 100),
+      ])
+      if (driversRes.success) setDrivers(driversRes.items)
+      if (vehiclesRes.success) setVehicles(vehiclesRes.items)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load fleet data')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadFleetData()
+  }, [loadFleetData])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -104,17 +154,31 @@ export default memo(function BusinessDashboard() {
     e.preventDefault()
     if (!inviteEmail || !inviteName) return
     setIsSendingInvite(true)
-    await new Promise(r => setTimeout(r, 600))
-    setIsSendingInvite(false)
-    setInviteModalOpen(false)
-    toast.success('Invitation delivered.', `Link dispatched to ${inviteEmail}`)
-    setInviteEmail('')
-    setInviteName('')
-    setInvitePhone('')
-    setInviteMessage(DEFAULT_INVITE_MESSAGE)
+    try {
+      await driverApi.create({
+        full_name: inviteName,
+        email: inviteEmail,
+        phone: invitePhone || undefined,
+      })
+      toast.success('Driver invited', `Invitation sent to ${inviteEmail}`)
+      setInviteModalOpen(false)
+      setInviteEmail('')
+      setInviteName('')
+      setInvitePhone('')
+      setInviteMessage(DEFAULT_INVITE_MESSAGE)
+      loadFleetData()
+    } catch (err) {
+      toast.error('Failed to invite driver', err instanceof Error ? err.message : 'Unknown error')
+    } finally {
+      setIsSendingInvite(false)
+    }
   }
 
-  const filteredDrivers = DRIVERS.filter(d => {
+  // Transform API drivers to UI driver items
+  const driverItems = drivers.map(d => mapDriverToItem(d, vehicles))
+  const recentActivities = mapRecentActivities(driverItems)
+
+  const filteredDrivers = driverItems.filter(d => {
     const matchesSearch =
       d.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       d.vehicle.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -123,9 +187,9 @@ export default memo(function BusinessDashboard() {
     return matchesSearch && matchesFilter
   })
 
-  const onlineCount = DRIVERS.filter(d => d.status === 'online').length
-  const alertCount = DRIVERS.filter(d => d.status === 'alert').length
-  const offlineCount = DRIVERS.filter(d => d.status === 'offline').length
+  const onlineCount = driverItems.filter(d => d.status === 'online').length
+  const alertCount = driverItems.filter(d => d.status === 'alert').length
+  const offlineCount = driverItems.filter(d => d.status === 'offline').length
 
   return (
     <div className="flex w-full h-full overflow-hidden bg-background text-text-primary">
@@ -265,7 +329,7 @@ export default memo(function BusinessDashboard() {
             <div className="flex items-baseline gap-2">
               <span className="font-display text-3xl font-extrabold text-text-primary">91.4%</span>
             </div>
-            <p className="text-[11px] text-text-secondary">Across {DRIVERS.length} registered vehicles</p>
+            <p className="text-[11px] text-text-secondary">Across {driverItems.length} registered vehicles</p>
           </div>
 
           {/* Active Drivers */}
@@ -276,7 +340,7 @@ export default memo(function BusinessDashboard() {
             </div>
             <div className="flex items-baseline gap-2">
               <span className="font-display text-3xl font-extrabold text-safe">{onlineCount}</span>
-              <span className="text-xs text-text-muted">/ {DRIVERS.length} total</span>
+              <span className="text-xs text-text-muted">/ {driverItems.length} total</span>
             </div>
             <p className="text-[11px] text-text-secondary">Live telemetry streaming</p>
           </div>
@@ -357,67 +421,92 @@ export default memo(function BusinessDashboard() {
 
             {/* Data Table */}
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-border text-text-muted uppercase tracking-wider text-[10px] font-mono">
-                    <th className="pb-2.5 px-3">Driver</th>
-                    <th className="pb-2.5 px-3">Vehicle</th>
-                    <th className="pb-2.5 px-3">Status</th>
-                    <th className="pb-2.5 px-3">Safety Score</th>
-                    <th className="pb-2.5 px-3 text-right">Console</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
-                  {filteredDrivers.map(driver => (
-                    <tr
-                      key={driver.id}
-                      onClick={() => navigate('/business/monitoring')}
-                      className="hover:bg-white/5 cursor-pointer transition-colors group"
-                    >
-                      <td className="py-3 px-3">
-                        <div className="font-semibold text-text-primary group-hover:text-brand transition-colors">
-                          {driver.name}
-                        </div>
-                        <span className="text-[10px] text-text-muted font-mono">{driver.id}</span>
-                      </td>
-
-                      <td className="py-3 px-3 text-text-secondary font-medium">
-                        {driver.vehicle}
-                      </td>
-
-                      <td className="py-3 px-3">
-                        {driver.status === 'online' && (
-                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-safe/10 text-safe font-mono font-bold text-[10px] border border-safe/25">
-                            <span className="w-1.5 h-1.5 rounded-full bg-safe" /> ONLINE
-                          </span>
-                        )}
-                        {driver.status === 'alert' && (
-                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-warning/10 text-warning font-mono font-bold text-[10px] border border-warning/30">
-                            <AlertTriangle size={11} /> ATTENTION
-                          </span>
-                        )}
-                        {driver.status === 'offline' && (
-                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-card text-text-muted font-mono text-[10px] border border-border">
-                            OFF-DUTY
-                          </span>
-                        )}
-                      </td>
-
-                      <td className="py-3 px-3 font-mono font-bold">
-                        <span className={driver.score >= 90 ? 'text-safe' : driver.score >= 80 ? 'text-warning' : 'text-danger'}>
-                          {driver.score}%
-                        </span>
-                      </td>
-
-                      <td className="py-3 px-3 text-right">
-                        <button className="p-1.5 rounded-[6px] bg-card group-hover:bg-brand group-hover:text-white transition-colors text-text-secondary">
-                          <ChevronRight size={13} />
-                        </button>
-                      </td>
+              {loading && (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  <span className="ml-2 text-xs text-text-secondary">Loading drivers...</span>
+                </div>
+              )}
+              {error && !loading && (
+                <div className="p-4 text-center text-xs text-warning">
+                  {error}
+                  <button 
+                    onClick={loadFleetData}
+                    className="ml-2 text-primary hover:underline"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+              {!loading && !error && (
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-border text-text-muted uppercase tracking-wider text-[10px] font-mono">
+                      <th className="pb-2.5 px-3">Driver</th>
+                      <th className="pb-2.5 px-3">Vehicle</th>
+                      <th className="pb-2.5 px-3">Status</th>
+                      <th className="pb-2.5 px-3">Safety Score</th>
+                      <th className="pb-2.5 px-3 text-right">Console</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-border/60">
+                    {filteredDrivers.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="py-8 text-center text-xs text-text-secondary">
+                          No drivers found. Click "Invite Driver" or "+ Add Driver" to get started.
+                        </td>
+                      </tr>
+                    ) : filteredDrivers.map(driver => (
+                      <tr
+                        key={driver.id}
+                        onClick={() => navigate('/business/monitoring')}
+                        className="hover:bg-white/5 cursor-pointer transition-colors group"
+                      >
+                        <td className="py-3 px-3">
+                          <div className="font-semibold text-text-primary group-hover:text-brand transition-colors">
+                            {driver.name}
+                          </div>
+                          <span className="text-[10px] text-text-muted font-mono">{driver.id}</span>
+                        </td>
+
+                        <td className="py-3 px-3 text-text-secondary font-medium">
+                          {driver.vehicle}
+                        </td>
+
+                        <td className="py-3 px-3">
+                          {driver.status === 'online' && (
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-safe/10 text-safe font-mono font-bold text-[10px] border border-safe/25">
+                              <span className="w-1.5 h-1.5 rounded-full bg-safe" /> ONLINE
+                            </span>
+                          )}
+                          {driver.status === 'alert' && (
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-warning/10 text-warning font-mono font-bold text-[10px] border border-warning/30">
+                              <AlertTriangle size={11} /> ATTENTION
+                            </span>
+                          )}
+                          {driver.status === 'offline' && (
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-card text-text-muted font-mono text-[10px] border border-border">
+                              OFF-DUTY
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="py-3 px-3 font-mono font-bold">
+                          <span className={driver.score >= 90 ? 'text-safe' : driver.score >= 80 ? 'text-warning' : 'text-danger'}>
+                            {driver.score}%
+                          </span>
+                        </td>
+
+                        <td className="py-3 px-3 text-right">
+                          <button className="p-1.5 rounded-[6px] bg-card group-hover:bg-brand group-hover:text-white transition-colors text-text-secondary">
+                            <ChevronRight size={13} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
 
           </div>
@@ -434,7 +523,11 @@ export default memo(function BusinessDashboard() {
             </div>
 
             <div className="space-y-2.5">
-              {RECENT_ACTIVITIES.map((act, i) => (
+              {recentActivities.length === 0 ? (
+                <div className="p-3 text-center text-xs text-text-secondary">
+                  No recent activity
+                </div>
+              ) : recentActivities.map((act, i) => (
                 <div
                   key={i}
                   className="p-3 rounded-[10px] bg-card border border-border/80 space-y-1 hover:border-white/20 transition-colors"

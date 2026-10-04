@@ -1,4 +1,4 @@
-import { memo, useState } from 'react'
+import { memo, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
@@ -11,9 +11,11 @@ import {
   RotateCcw,
   Save,
   ArrowLeft,
+  Loader2,
 } from 'lucide-react'
 import MainLayout from '../layouts/MainLayout'
 import { useToast } from '../context/ToastContext'
+import { vehicleApi, driverApi, type Driver } from '../services/fleetApi'
 
 interface VehicleFormState {
   // Vehicle Info
@@ -74,6 +76,15 @@ const AddVehiclePage = memo(function AddVehiclePage() {
   const toast = useToast()
   const [form, setForm] = useState<VehicleFormState>(INITIAL_FORM)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [drivers, setDrivers] = useState<Driver[]>([])
+  const [loadingDrivers, setLoadingDrivers] = useState(true)
+
+  useEffect(() => {
+    driverApi.list(1, 100).then(res => {
+      if (res.success) setDrivers(res.items)
+      setLoadingDrivers(false)
+    }).catch(() => setLoadingDrivers(false))
+  }, [])
 
   const handleChange = (key: keyof VehicleFormState, value: string) => {
     setForm(prev => ({ ...prev, [key]: value }))
@@ -91,10 +102,31 @@ const AddVehiclePage = memo(function AddVehiclePage() {
       return
     }
     setIsSubmitting(true)
-    await new Promise(r => setTimeout(r, 700))
-    setIsSubmitting(false)
-    toast.success('Vehicle Saved Successfully', `Vehicle ${form.vehicleNumber} (${form.model}) registered.`)
-    navigate('/fleet')
+    try {
+      const res = await vehicleApi.create({
+        vehicle_number: form.vehicleNumber,
+        registration_number: form.registrationNumber || undefined,
+        vehicle_type: form.vehicleType || undefined,
+        manufacturer: form.manufacturer || undefined,
+        model: form.model || undefined,
+        year: form.year || undefined,
+        color: form.color || undefined,
+        vin_number: form.vinNumber || undefined,
+        department: form.department || undefined,
+        insurance_company: form.insuranceCompany || undefined,
+        policy_number: form.policyNumber || undefined,
+        insurance_expiry: form.insuranceExpiry || undefined,
+        status: form.status || 'Active',
+      })
+      if (res.success) {
+        toast.success('Vehicle Saved Successfully', `Vehicle ${form.vehicleNumber} (${form.model}) registered.`)
+        navigate('/fleet')
+      }
+    } catch (err) {
+      toast.error('Failed to save vehicle', err instanceof Error ? err.message : 'Unknown error')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -284,12 +316,14 @@ const AddVehiclePage = memo(function AddVehiclePage() {
                   value={form.assignedDriver}
                   onChange={e => handleChange('assignedDriver', e.target.value)}
                   className={inputClass + ' cursor-pointer'}
+                  disabled={loadingDrivers}
                 >
-                  <option value="John Driver">John Driver (DRV-101)</option>
-                  <option value="Marcus Vance">Marcus Vance (DRV-102)</option>
-                  <option value="Elena Rostova">Elena Rostova (DRV-103)</option>
-                  <option value="David Miller">David Miller (DRV-104)</option>
-                  <option value="Samantha Reed">Samantha Reed (DRV-105)</option>
+                  <option value="">Select driver...</option>
+                  {drivers.map(d => (
+                    <option key={d.id} value={d.full_name}>
+                      {d.full_name} (ID: {d.id})
+                    </option>
+                  ))}
                   <option value="Unassigned">Unassigned</option>
                 </select>
               </div>
@@ -419,7 +453,7 @@ const AddVehiclePage = memo(function AddVehiclePage() {
                 className="px-6 py-2.5 rounded-xl bg-primary text-white text-xs font-bold hover:opacity-90 transition-opacity flex items-center gap-2 shadow-md disabled:opacity-60"
               >
                 {isSubmitting ? (
-                  <><div className="w-3.5 h-3.5 rounded-full border-2 border-white/40 border-t-white animate-spin" /> Saving...</>
+                  <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving...</>
                 ) : (
                   <><Save size={15} /> Save Vehicle</>
                 )}

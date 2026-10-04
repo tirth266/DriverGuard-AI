@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useState } from 'react'
+﻿import { memo, useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -8,40 +8,37 @@ import {
   Minimize2,
   CheckCircle2,
   Smartphone,
-  ShieldAlert,
   Shield,
   Truck,
   User as UserIcon,
   StopCircle,
+  MapPin,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
-import WebcamFeed from './WebcamFeed'
+import WebcamFeed, { useScoreDisplay } from './WebcamFeed'
+import type { SessionSummary, Telemetry } from './WebcamFeed'
+import { useGPS } from '../../hooks/useGPS'
 
-const FINAL_SESSION_STORAGE_KEY = 'driverguard.final_session_summary'
-
-type MediaPipeTelemetry = {
-  available: boolean
-  reason?: string
-  face_detected: boolean
-  eye_state: string
-  eye_measurement: number | null
-  drowsiness_event: boolean
-  yawn_detected: boolean
-  mouth_measurement: number | null
-  head_pose: string
-  hands_detected: boolean
-  hand_count: number
-  hand_landmarks_available: boolean
+const ALERT_LABELS: Record<string, string> = {
+  phone_use: 'Phone use',
+  drinking_eating: 'Drinking / eating',
+  eyes_closed: 'Eyes closed',
+  drowsy: 'Drowsy',
+  head_away: 'Head away',
+  head_down: 'Head down',
+  yawn: 'Yawning',
 }
 
-/* ─── Circular Safety Score Gauge ─────────────────────────── */
+/* â”€â”€â”€ Circular Safety Score Gauge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
-function CircularGauge({ value, size = 68 }: { value: number; size?: number }) {
+function CircularGauge({ value, muted = false, size = 68 }: { value: number; muted?: boolean; size?: number }) {
   const radius = (size - 10) / 2
   const circ = 2 * Math.PI * radius
-  const offset = circ - (value / 100) * circ
-  const color = value >= 90 ? '#10b981' : value >= 80 ? '#f59e0b' : '#f43f5e'
+  const clamped = Math.max(0, Math.min(100, value))
+  const offset = circ - (clamped / 100) * circ
+  // No verified score: neutral gray track only, never a green ring.
+  const color = muted ? 'transparent' : value >= 90 ? '#10b981' : value >= 80 ? '#f59e0b' : '#f43f5e'
   return (
     <svg width={size} height={size} className="rotate-[-90deg]" aria-hidden="true">
       <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="currentColor" className="text-border" strokeWidth={6} />
@@ -67,61 +64,74 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
   const toast = useToast()
   const navigate = useNavigate()
 
+  // GPS Hook
+  const { location: gpsLocation, error: gpsError, supported: gpsSupported, getCurrentLocation } = useGPS()
+
   // Feed control states
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [isRecording, setIsRecording] = useState(true)
   const [showEndRideModal, setShowEndRideModal] = useState(false)
 
   // Real-time telemetry state for live camera
-  const [liveTelemetry, setLiveTelemetry] = useState({
+  const [liveTelemetry, setLiveTelemetry] = useState<Partial<Telemetry>>({
     score: 0,
-    eyesOnRoad: false,
-    phoneDetected: false,
-    seatbeltOk: false,
-    drowsiness: 0,
+    grade: '',
+    scoreAvailable: false,
+    aiStatus: 'warming_up',
+    failReasons: [],
+    activeAlerts: [],
     faceDetected: false,
-    status: 'waiting',
     isDistracted: false,
-    topClass: 'waiting_for_detection',
-    className: 'Waiting for live YOLO result',
-    confidence: 0,
-    detections: [] as any[],
-    alerts: [] as string[],
-    cameraState: 'initializing' as 'initializing' | 'active' | 'denied' | 'not_detected' | 'error',
-    processingState: 'idle' as 'idle' | 'processing' | 'success' | 'error',
-    detectionState: 'waiting' as 'waiting' | 'no_object' | 'object_detected' | 'api_error' | 'camera_unavailable',
-    latencyMs: null as number | null,
-    lastSuccessfulFrameAt: null as number | null,
-    processingError: null as string | null,
-    mediapipe: null as MediaPipeTelemetry | null,
-    sessionSummary: null as {
-      current_safety_score: number
-      lowest_session_score: number
-      total_distraction_events: number
-      phone_events: number
-      bottle_events: number
-      cup_events: number
-      total_distracted_duration: number
-      events: Array<{
-        type: string
-        start_time: number
-        end_time: number
-        duration: number
-        max_confidence: number | null
-        min_score: number
-      }>
-    } | null,
+    alerts: [],
+    detections: [],
+    detectionCount: 0,
+    cabinObjects: { phone: 0, drink: 0, food: 0 },
+    ear: null,
+    mar: null,
+    yaw: null,
+    pitch: null,
+    eyeState: 'no_face',
+    eyesClosed: false,
+    drowsy: false,
+    yawning: false,
+    headPose: 'no_face',
+    cameraState: 'initializing',
+    processingState: 'idle',
+    detectionState: 'waiting',
+    frameFreshness: 'stale',
+    latencyMs: null,
+    fps: 0,
+    lastSuccessfulFrameAt: null,
+    processingError: null,
+    sessionSummary: null,
   })
 
   useEffect(() => {
     const backendUrl = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000').replace(/\/$/, '')
-    sessionStorage.removeItem(FINAL_SESSION_STORAGE_KEY)
     void fetch(`${backendUrl}/api/video/session/reset`, { method: 'POST' }).catch(() => undefined)
   }, [])
 
-  const handleTelemetryUpdate = useCallback((newTelemetry: Partial<typeof liveTelemetry>) => {
+  const handleTelemetryUpdate = useCallback((newTelemetry: Partial<Telemetry>) => {
     setLiveTelemetry(prev => ({ ...prev, ...newTelemetry }))
   }, [])
+
+  const hasSignal = liveTelemetry.aiStatus === 'ok'
+  // One source of truth for the score and everything labelled from it. The score
+  // advances whenever a frame was analysed with a visible driver; until then, and
+  // whenever that stops, it is held rather than presented as a live reading.
+  const scoreDisplay = useScoreDisplay(liveTelemetry)
+  const verifiedScore = scoreDisplay.score
+  const mutedScore = scoreDisplay.held
+  const activeAlerts = liveTelemetry.activeAlerts ?? []
+  const phoneAlert = activeAlerts.includes('phone_use')
+  const detectionLabel = activeAlerts.length > 0
+    ? activeAlerts.map(alert => ALERT_LABELS[alert] || alert).join(' Â· ')
+    : hasSignal
+    ? `${liveTelemetry.detectionCount ?? 0} cabin object(s)`
+    : 'No AI signal'
+  const topConfidence = liveTelemetry.detections?.length
+    ? Math.max(...liveTelemetry.detections.map(detection => detection.confidence))
+    : 0
 
   const detectionStateLabel = {
     waiting: 'WAITING FOR FRAME',
@@ -129,7 +139,7 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
     object_detected: 'OBJECT DETECTED',
     api_error: 'API / INFERENCE ERROR',
     camera_unavailable: 'CAMERA UNAVAILABLE',
-  }[liveTelemetry.detectionState]
+  }[liveTelemetry.detectionState ?? 'waiting']
 
   const activeDriver = {
     name: 'Camera Feed',
@@ -140,7 +150,7 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
     events: [
       {
         time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-        label: liveTelemetry.className,
+        label: detectionLabel,
         dot: liveTelemetry.isDistracted ? 'bg-rose-500' : 'bg-emerald-500',
       },
     ],
@@ -150,15 +160,18 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
     toast.success('Snapshot Captured', `Saved live camera frame from ${activeDriver.name} (${activeDriver.vehicle})`)
   }
 
-  const sessionSummary = liveTelemetry.sessionSummary ?? {
-    current_safety_score: liveTelemetry.score,
-    lowest_session_score: liveTelemetry.score,
-    total_distraction_events: 0,
+  const sessionSummary: SessionSummary = liveTelemetry.sessionSummary ?? {
+    duration_seconds: 0,
+    final_score: liveTelemetry.score ?? 0,
+    grade: liveTelemetry.grade ?? 'Excellent',
+    lowest_session_score: liveTelemetry.score ?? 0,
+    points_lost: 0,
+    score_breakdown: [],
+    total_events: 0,
     phone_events: 0,
-    bottle_events: 0,
-    cup_events: 0,
     total_distracted_duration: 0,
     events: [],
+    score_timeline: [],
   }
 
   // End Ride Confirmation Action
@@ -179,30 +192,23 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
       // Keep the latest frame summary if the authoritative read is unavailable.
     }
 
-    sessionStorage.setItem(FINAL_SESSION_STORAGE_KEY, JSON.stringify(finalSessionSummary))
-
-    navigate(targetSummary, {
-      state: {
-        rideData: {
-          driverName: activeDriver.name,
-          vehicle: activeDriver.vehicle,
-          date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-          startTime: '09:15 AM',
-          endTime: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-          duration: '1h 13m',
-          distance: '48.2 km',
-          avgSpeed: '52 km/h',
-          score: finalSessionSummary.current_safety_score,
-          sessionSummary: finalSessionSummary,
-        }
+    // Get GPS location for end location
+    let endGpsLocation = gpsLocation
+    if (!endGpsLocation && gpsSupported) {
+      try {
+        endGpsLocation = await getCurrentLocation()
+      } catch {
+        // GPS not available
       }
-    })
+    }
+
+    navigate(targetSummary, { state: { sessionSummary: finalSessionSummary, endGpsLocation } })
   }
 
   return (
     <div className="w-full h-full max-h-full bg-background text-on-surface flex flex-col overflow-hidden transition-colors duration-300">
       
-      {/* ── TOP HEADER STRIP ──────────────────────────────── */}
+      {/* â”€â”€ TOP HEADER STRIP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div className="px-4 py-2 bg-surface border-b border-border flex items-center justify-between gap-3 flex-wrap flex-shrink-0">
         <div className="flex items-center gap-3">
           <div className="h-8 w-8 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
@@ -230,10 +236,10 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
         </div>
       </div>
 
-      {/* ── MAIN THREE-PANEL LAYOUT (overflow: hidden, flex-1) ── */}
+      {/* â”€â”€ MAIN THREE-PANEL LAYOUT (overflow: hidden, flex-1) â”€â”€ */}
       <div className="flex-1 flex flex-col lg:flex-row gap-3 p-3 min-h-0 overflow-hidden">
 
-        {/* ━━━ 1. LEFT SIDEBAR: DRIVER LIST ━━━━━━━━━━━━━━━━━ */}
+        {/* â”â”â” 1. LEFT SIDEBAR: DRIVER LIST â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â” */}
         <div className="w-full lg:w-72 bg-card border border-border rounded-2xl p-3 shadow-sm flex flex-col gap-2.5 flex-shrink-0 min-h-0 overflow-hidden">
           <div className="flex items-center justify-between border-b border-border pb-2 flex-shrink-0">
             <span className="text-xs font-extrabold uppercase tracking-wider text-on-surface flex items-center gap-2">
@@ -248,7 +254,7 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
             <p className="font-bold text-on-surface">{activeDriver.name}</p>
             <p className="mt-1">{activeDriver.vehicle}</p>
             <p className={`mt-2 font-mono text-[10px] uppercase ${liveTelemetry.cameraState === 'active' ? 'text-emerald-500' : 'text-amber-500'}`}>
-              CAMERA: {liveTelemetry.cameraState.replace('_', ' ')}
+              CAMERA: {(liveTelemetry.cameraState ?? 'initializing').replace('_', ' ')}
             </p>
             <p className={`mt-1 font-mono text-[10px] uppercase ${liveTelemetry.processingState === 'error' ? 'text-rose-500' : 'text-on-surface-variant'}`}>
               {detectionStateLabel}
@@ -259,7 +265,7 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
           </div>
         </div>
 
-        {/* ━━━ 2. CENTER: CAMERA PANEL (height: 100%, overflow: hidden) ━━━━━━━ */}
+        {/* â”â”â” 2. CENTER: CAMERA PANEL (height: 100%, overflow: hidden) â”â”â”â”â”â”â” */}
         <div className="flex-1 flex flex-col gap-3 min-w-0 min-h-0 h-full overflow-hidden">
           <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-xl flex flex-col h-full min-h-0">
 
@@ -270,7 +276,7 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
                   <span className="w-2 h-2 rounded-full bg-emerald-500 pulse-dot" /> LIVE 1080P
                 </span>
                 <span className="text-xs font-mono text-on-surface font-semibold hidden sm:block truncate">
-                  {activeDriver.vehicle} • {activeDriver.name}
+                  {activeDriver.vehicle} â€¢ {activeDriver.name}
                 </span>
               </div>
 
@@ -330,12 +336,12 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
             {/* Bottom Status Strip */}
             <div className="px-3 py-1.5 bg-surface border-t border-border flex items-center justify-between text-[11px] text-on-surface-variant font-medium flex-shrink-0">
               <span>VEHICLE: <span className="font-bold text-on-surface">{activeDriver.vehicle}</span></span>
-              <span>SAFETY SCORE: <span className="font-mono font-bold text-emerald-500">{liveTelemetry.status === 'waiting' ? '--' : `${liveTelemetry.score}/100`}</span></span>
+              <span>SAFETY SCORE: <span className="font-mono font-bold text-on-surface">{verifiedScore === null ? '--' : `${verifiedScore}/100`}</span></span>
             </div>
           </div>
         </div>
 
-        {/* ━━━ 3. RIGHT PANEL: AI DETECTION & SAFETY SCORE ━━━━━━ */}
+        {/* â”â”â” 3. RIGHT PANEL: AI DETECTION & SAFETY SCORE â”â”â”â”â”â” */}
         <div className="w-full lg:w-72 bg-card border border-border rounded-2xl p-3 shadow-sm flex flex-col gap-3 flex-shrink-0 min-h-0 overflow-y-auto">
           <div className="flex items-center justify-between border-b border-border pb-2 flex-shrink-0">
             <span className="text-xs font-extrabold uppercase tracking-wider text-on-surface flex items-center gap-2">
@@ -355,9 +361,9 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
           {/* Safety Score Gauge */}
           <div className="flex items-center gap-3 p-2.5 rounded-xl bg-surface border border-border flex-shrink-0">
             <div className="relative flex-shrink-0">
-              <CircularGauge value={liveTelemetry.score} size={68} />
+              <CircularGauge value={verifiedScore ?? 0} muted={mutedScore} size={68} />
               <div className="absolute inset-0 flex items-center justify-center rotate-[90deg]">
-                <span className="text-xs font-extrabold text-on-surface font-mono">{liveTelemetry.status === 'waiting' ? '--' : `${liveTelemetry.score}%`}</span>
+                <span className="text-xs font-extrabold text-on-surface font-mono">{verifiedScore === null ? '--' : `${verifiedScore}%`}</span>
               </div>
             </div>
             <div>
@@ -365,10 +371,14 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
                 Safety Score
               </span>
               <span className="text-base font-extrabold text-on-surface font-mono">
-                {liveTelemetry.status === 'waiting' ? '--' : <>{liveTelemetry.score}<span className="text-xs text-primary font-medium">/100</span></>}
+                {verifiedScore === null ? '--' : <>{verifiedScore}<span className="text-xs text-primary font-medium">/100</span></>}
               </span>
-              <p className="text-[10px] text-emerald-500 font-semibold mt-0.5">
-                {liveTelemetry.status === 'waiting' ? 'Waiting for live frame' : liveTelemetry.score >= 90 ? 'High Compliance' : 'Review Advised'}
+              <p className={`text-[10px] font-semibold mt-0.5 ${verifiedScore === null || mutedScore ? 'text-on-surface-variant' : 'text-emerald-500'}`}>
+                {verifiedScore === null
+                  ? 'Not assessed'
+                  : mutedScore
+                  ? 'Held — not verified'
+                  : verifiedScore >= 90 ? 'High Compliance' : 'Review Advised'}
               </p>
             </div>
           </div>
@@ -383,7 +393,7 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
             <div className="flex items-center justify-between py-1 border-b border-border">
               <span className="text-on-surface-variant text-[11px]">YOLO Detection</span>
               <span className={`font-bold text-[11px] truncate max-w-[130px] ${liveTelemetry.isDistracted ? 'text-rose-500 font-extrabold' : 'text-emerald-500'}`}>
-                {liveTelemetry.className}
+                {detectionLabel}
               </span>
             </div>
 
@@ -395,78 +405,122 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
             </div>
 
             <div className="flex items-center justify-between py-1 border-b border-border">
-              <span className="text-on-surface-variant text-[11px]">Last Successful Frame</span>
-              <span className="font-bold text-[11px] text-primary font-mono">
-                {liveTelemetry.lastSuccessfulFrameAt === null ? '--' : new Date(liveTelemetry.lastSuccessfulFrameAt).toLocaleTimeString()}
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between py-1 border-b border-border">
               <span className="text-on-surface-variant text-[11px]">AI Confidence</span>
               <span className="font-bold text-[11px] text-primary font-mono">
-                {liveTelemetry.status === 'waiting' ? '--' : `${Math.round(liveTelemetry.confidence * 100)}%`}
+                {hasSignal && topConfidence > 0 ? `${Math.round(topConfidence * 100)}%` : '--'}
               </span>
             </div>
 
             <div className="flex items-center justify-between py-1 border-b border-border">
               <span className="text-on-surface-variant text-[11px]">Seat Belt</span>
-              <span className={`font-bold text-[11px] flex items-center gap-1 ${liveTelemetry.seatbeltOk ? 'text-emerald-500' : 'text-rose-500'}`}>
-                {liveTelemetry.status === 'waiting' ? '--' : liveTelemetry.seatbeltOk ? <CheckCircle2 size={12} /> : <ShieldAlert size={12} />}
-                {liveTelemetry.status === 'waiting' ? 'WAITING' : liveTelemetry.seatbeltOk ? 'COMPLIANT' : 'UNBUCKLED'}
+              <span className="font-bold text-[11px] text-on-surface-variant flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded border border-border flex items-center justify-center" />
+                NOT SUPPORTED
               </span>
             </div>
 
             <div className="flex items-center justify-between py-1 border-b border-border">
               <span className="text-on-surface-variant text-[11px]">Phone Usage</span>
-              <span className={`font-bold text-[11px] flex items-center gap-1 ${!liveTelemetry.phoneDetected ? 'text-emerald-500' : 'text-rose-500'}`}>
-                {liveTelemetry.status === 'waiting' ? '--' : !liveTelemetry.phoneDetected ? <CheckCircle2 size={12} /> : <Smartphone size={12} />}
-                {liveTelemetry.status === 'waiting' ? 'WAITING' : !liveTelemetry.phoneDetected ? 'NONE' : 'DETECTED'}
+              <span className={`font-bold text-[11px] flex items-center gap-1 ${!phoneAlert ? 'text-emerald-500' : 'text-rose-500'}`}>
+                {!hasSignal ? '--' : phoneAlert ? <Smartphone size={12} /> : <CheckCircle2 size={12} />}
+                {!hasSignal ? 'NO SIGNAL' : phoneAlert ? 'DETECTED' : 'NONE'}
               </span>
             </div>
 
             <div className="flex items-center justify-between py-1 border-b border-border">
               <span className="text-on-surface-variant text-[11px]">Face Detection</span>
               <span className="font-bold text-[11px] text-emerald-500">
-                {liveTelemetry.mediapipe ? (liveTelemetry.mediapipe.face_detected ? 'DETECTED' : 'NO FACE') : 'UNAVAILABLE'}
+                {!hasSignal ? 'NO SIGNAL' : liveTelemetry.faceDetected ? 'DETECTED' : 'NO FACE'}
               </span>
             </div>
 
             <div className="flex items-center justify-between py-1 border-b border-border">
               <span className="text-on-surface-variant text-[11px]">Eye State</span>
-              <span className={`font-bold text-[11px] ${liveTelemetry.mediapipe?.drowsiness_event ? 'text-rose-500' : 'text-emerald-500'}`}>
-                {liveTelemetry.mediapipe?.eye_state ?? 'UNAVAILABLE'}
+              <span className={`font-bold text-[11px] ${liveTelemetry.drowsy ? 'text-rose-500' : 'text-emerald-500'}`}>
+                {hasSignal ? liveTelemetry.eyeState : 'NO SIGNAL'}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between py-1 border-b border-border">
+              <span className="text-on-surface-variant text-[11px]">EAR (Eye Aspect Ratio)</span>
+              <span className="font-bold text-[11px] text-primary">
+                {liveTelemetry.ear !== null && liveTelemetry.ear !== undefined
+                  ? liveTelemetry.ear.toFixed(3)
+                  : 'UNAVAILABLE'}
               </span>
             </div>
 
             <div className="flex items-center justify-between py-1 border-b border-border">
               <span className="text-on-surface-variant text-[11px]">Drowsiness Event</span>
-              <span className={`font-bold text-[11px] ${liveTelemetry.mediapipe?.drowsiness_event ? 'text-rose-500' : 'text-emerald-500'}`}>
-                {liveTelemetry.mediapipe ? (liveTelemetry.mediapipe.drowsiness_event ? 'CONFIRMED' : 'NONE') : 'UNAVAILABLE'}
+              <span className={`font-bold text-[11px] ${liveTelemetry.drowsy ? 'text-rose-500' : 'text-emerald-500'}`}>
+                {!hasSignal ? 'NO SIGNAL' : liveTelemetry.drowsy ? 'CONFIRMED' : 'NONE'}
               </span>
             </div>
 
             <div className="flex items-center justify-between py-1 border-b border-border">
               <span className="text-on-surface-variant text-[11px]">Yawning</span>
-              <span className={`font-bold text-[11px] ${liveTelemetry.mediapipe?.yawn_detected ? 'text-rose-500' : 'text-emerald-500'}`}>
-                {liveTelemetry.mediapipe ? (liveTelemetry.mediapipe.yawn_detected ? 'CONFIRMED' : 'NONE') : 'UNAVAILABLE'}
+              <span className={`font-bold text-[11px] ${liveTelemetry.yawning ? 'text-rose-500' : 'text-emerald-500'}`}>
+                {!hasSignal ? 'NO SIGNAL' : liveTelemetry.yawning ? 'CONFIRMED' : 'NONE'}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between py-1 border-b border-border">
+              <span className="text-on-surface-variant text-[11px]">MAR (Mouth Aspect Ratio)</span>
+              <span className="font-bold text-[11px] text-primary">
+                {liveTelemetry.mar !== null && liveTelemetry.mar !== undefined
+                  ? liveTelemetry.mar.toFixed(3)
+                  : 'UNAVAILABLE'}
               </span>
             </div>
 
             <div className="flex items-center justify-between py-1 border-b border-border">
               <span className="text-on-surface-variant text-[11px]">Head Pose</span>
               <span className="font-bold text-[11px] text-primary">
-                {liveTelemetry.mediapipe?.head_pose ?? 'UNAVAILABLE'}
+                {hasSignal ? liveTelemetry.headPose : 'NO SIGNAL'}
               </span>
             </div>
 
             <div className="flex items-center justify-between py-1 border-b border-border">
-              <span className="text-on-surface-variant text-[11px]">Hands</span>
-              <span className="font-bold text-[11px] text-primary">
-                {liveTelemetry.mediapipe ? `${liveTelemetry.mediapipe.hand_count} DETECTED` : 'UNAVAILABLE'}
+              <span className="text-on-surface-variant text-[11px]">Cabin Objects</span>
+              <span className="font-bold text-[11px] text-primary font-mono">
+                {hasSignal
+                  ? `phone ${liveTelemetry.cabinObjects?.phone ?? 0} Â· drink ${liveTelemetry.cabinObjects?.drink ?? 0} Â· food ${liveTelemetry.cabinObjects?.food ?? 0}`
+                  : 'NO SIGNAL'}
               </span>
             </div>
+
+            {activeAlerts.length > 0 && (
+              <div className="flex items-center justify-between py-1 border-b border-border">
+                <span className="text-on-surface-variant text-[11px]">Active Alerts</span>
+                <span className="font-bold text-[11px] text-rose-500">
+                  {activeAlerts.join(', ')}
+                </span>
+              </div>
+            )}
           </div>
 
+
+          {/* GPS Location Display */}
+          <div className="mt-2 p-2.5 rounded-xl bg-surface border border-border space-y-0.5 text-xs flex-shrink-0">
+            <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider block flex items-center gap-1">
+              <MapPin size={12} className="text-primary" /> GPS Location
+            </span>
+            {gpsLocation ? (
+              <>
+                <p className="font-mono text-xs text-on-surface">
+                  {gpsLocation.latitude.toFixed(6)}, {gpsLocation.longitude.toFixed(6)}
+                </p>
+                <p className="text-[10px] text-on-surface-variant">
+                  Accuracy: {gpsLocation.accuracy ? `${gpsLocation.accuracy.toFixed(1)}m` : 'Unknown'}
+                </p>
+              </>
+            ) : gpsSupported ? (
+              <p className="text-[10px] text-amber-500">Waiting for GPS fix...</p>
+            ) : (
+              <p className="text-[10px] text-rose-500">GPS not supported</p>
+            )}
+            {gpsError && <p className="text-[10px] text-rose-500">{gpsError}</p>}
+          </div>
 
           {/* Current Vehicle Details */}
           <div className="mt-auto p-2.5 rounded-xl bg-surface border border-border space-y-0.5 text-xs flex-shrink-0">
@@ -481,7 +535,7 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
 
       </div>
 
-      {/* ━━━ 4. BOTTOM: RECENT EVENTS TIMELINE ━━━━━━━━━━━━━━━ */}
+      {/* â”â”â” 4. BOTTOM: RECENT EVENTS TIMELINE â”â”â”â”â”â”â”â”â”â”â”â”â”â”â” */}
       <div className="mx-3 mb-3 flex-shrink-0">
         <div className="bg-card border border-border rounded-2xl p-3 shadow-sm">
           <div className="flex items-center justify-between mb-2">
@@ -495,29 +549,29 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
             <div className="flex items-center gap-2 p-2 rounded-xl bg-surface border border-border">
               <span className={`w-2 h-2 rounded-full flex-shrink-0 ${liveTelemetry.isDistracted ? 'bg-rose-500' : 'bg-emerald-500'}`} />
               <div className="min-w-0">
-                <p className="text-[11px] font-bold text-on-surface truncate">{liveTelemetry.className}</p>
-                <span className="text-[10px] text-on-surface-variant font-mono">{liveTelemetry.status === 'waiting' ? '--' : `${Math.round(liveTelemetry.confidence * 100)}%`}</span>
+                <p className="text-[11px] font-bold text-on-surface truncate">{detectionLabel}</p>
+                <span className="text-[10px] text-on-surface-variant font-mono">{hasSignal && topConfidence > 0 ? `${Math.round(topConfidence * 100)}%` : '--'}</span>
               </div>
             </div>
             <div className="flex items-center gap-2 p-2 rounded-xl bg-surface border border-border">
               <span className="w-2 h-2 rounded-full flex-shrink-0 bg-sky-500" />
               <div className="min-w-0">
                 <p className="text-[11px] font-bold text-on-surface truncate">Status</p>
-                <span className="text-[10px] text-on-surface-variant font-mono">{liveTelemetry.status}</span>
+                <span className="text-[10px] text-on-surface-variant font-mono">{liveTelemetry.aiStatus}</span>
               </div>
             </div>
             <div className="flex items-center gap-2 p-2 rounded-xl bg-surface border border-border">
               <span className="w-2 h-2 rounded-full flex-shrink-0 bg-violet-500" />
               <div className="min-w-0">
                 <p className="text-[11px] font-bold text-on-surface truncate">Detections</p>
-                <span className="text-[10px] text-on-surface-variant font-mono">{liveTelemetry.detections?.length ?? 0} objects</span>
+                <span className="text-[10px] text-on-surface-variant font-mono">{hasSignal ? `${liveTelemetry.detectionCount ?? 0} objects` : '--'}</span>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ━━━ TASK 1: END RIDE CONFIRMATION MODAL ━━━ */}
+      {/* â”â”â” TASK 1: END RIDE CONFIRMATION MODAL â”â”â” */}
       <AnimatePresence>
         {showEndRideModal && (
           <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
@@ -573,7 +627,7 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
         )}
       </AnimatePresence>
 
-      {/* ━━━ FULLSCREEN MODAL ━━━ */}
+      {/* â”â”â” FULLSCREEN MODAL â”â”â” */}
       <AnimatePresence>
         {isFullscreen && (
           <motion.div
@@ -586,7 +640,7 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
               <div className="flex items-center gap-2.5">
                 <Radio size={15} className="text-emerald-400 animate-pulse" />
                 <span className="font-bold text-sm font-mono">
-                  LIVE MONITORING • {activeDriver.name} ({activeDriver.vehicle})
+                  LIVE MONITORING â€¢ {activeDriver.name} ({activeDriver.vehicle})
                 </span>
               </div>
               <button
@@ -608,3 +662,4 @@ const LiveMonitoringCenter = memo(function LiveMonitoringCenter() {
 })
 
 export default LiveMonitoringCenter
+

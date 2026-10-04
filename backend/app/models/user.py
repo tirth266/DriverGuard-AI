@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 import bcrypt
 from sqlalchemy import Integer, String, Boolean, Text, DateTime
-from sqlalchemy.orm import mapped_column, Mapped
+from sqlalchemy.orm import mapped_column, Mapped, relationship
 from typing import Optional
 from app.extensions import Base
 
@@ -13,7 +13,7 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     display_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     email: Mapped[str] = mapped_column(String(120), unique=True, nullable=False, index=True)
-    password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Nullable for OAuth users
+    password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     company: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, default='')
     role: Mapped[str] = mapped_column(String(50), nullable=False, default='User')
 
@@ -39,6 +39,10 @@ class User(Base):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
+
+    # Relationships
+    companies: Mapped[list["Company"]] = relationship("Company", back_populates="owner", cascade="all, delete-orphan")
+    settings: Mapped[Optional["UserSettings"]] = relationship("UserSettings", back_populates="user", cascade="all, delete-orphan", uselist=False)
 
     def set_password(self, password: str) -> None:
         """Hashes password using bcrypt."""

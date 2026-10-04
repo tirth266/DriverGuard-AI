@@ -1,6 +1,10 @@
 import os
 from dotenv import load_dotenv
 
+_backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_env_path = os.path.join(_backend_dir, ".env")
+if os.path.exists(_env_path):
+    load_dotenv(_env_path)
 load_dotenv()
 
 
@@ -10,9 +14,9 @@ class Config:
     APP_ENV: str = os.environ.get("FLASK_ENV", "development")
 
     # ── Database ───────────────────────────────────────────────────────────
-    DATABASE_URL: str = os.environ.get(
-        "DATABASE_URL", "sqlite:///driverguard.db"
-    )
+    # NOTE: Required for authentication (register, login, Google OAuth, user lookup).
+    # Set DATABASE_URL in environment. No default SQLite to avoid implicit file creation.
+    DATABASE_URL: str = os.environ.get("DATABASE_URL", "")
 
     # ── JWT ────────────────────────────────────────────────────────────────
     JWT_SECRET_KEY: str = os.environ.get("JWT_SECRET", "jwt-secret-change-in-prod")
@@ -38,7 +42,9 @@ class Config:
         "YOLO_MODEL_PATH",
         os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "models", "trained", "yolo11", "detection", "best.pt")
     )
-    YOLO_CONFIDENCE_THRESHOLD: float = float(os.environ.get("YOLO_CONFIDENCE_THRESHOLD", "0.40"))
+    # NOTE: per-class detection confidences live in app.ai.yolo_service
+    # (PHONE_CONF_THRESHOLD / CABIN_CONF_THRESHOLD) so they stay next to the
+    # monitored class list they gate.
 
     # ── MediaPipe Tasks Vision (Face & Hand Landmarkers) ──────────────────
     MEDIAPIPE_FACE_MODEL_PATH: str = os.environ.get(

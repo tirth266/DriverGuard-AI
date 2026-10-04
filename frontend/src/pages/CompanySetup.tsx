@@ -9,8 +9,11 @@ import {
   ArrowRight,
   Shield,
   CheckCircle2,
+  Loader2,
 } from 'lucide-react'
 import { useAuth, type CompanySetupData } from '../context/AuthContext'
+import { companyApi } from '../services/fleetApi'
+import { useToast } from '../context/ToastContext'
 import ThemeToggle from '../components/layout/ThemeToggle'
 
 const FLEET_SIZES = ['1–5', '6–20', '21–50', '51–200', '200+']
@@ -40,8 +43,9 @@ const fieldClass =
 const labelClass = 'block text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-1.5'
 
 const CompanySetupPage = memo(function CompanySetupPage() {
-  const { completeCompanySetup, user } = useAuth()
+  const { user } = useAuth()
   const navigate = useNavigate()
+  const toast = useToast()
 
   const [form, setForm] = useState<CompanySetupData>({
     companyName: user?.company || '',
@@ -71,9 +75,22 @@ const CompanySetupPage = memo(function CompanySetupPage() {
     e.preventDefault()
     if (!validate()) return
     setSubmitting(true)
-    await new Promise(r => setTimeout(r, 700))
-    completeCompanySetup(form)
-    navigate('/fleet', { replace: true })
+    try {
+      const res = await companyApi.create({
+        name: form.companyName,
+        fleet_size: form.fleetSize,
+        country: form.country,
+        industry: form.industry,
+      })
+      if (res.success) {
+        toast.success('Company created', 'Your fleet has been set up successfully')
+        navigate('/fleet', { replace: true })
+      }
+    } catch (err) {
+      toast.error('Failed to create company', err instanceof Error ? err.message : 'Unknown error')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -210,7 +227,7 @@ const CompanySetupPage = memo(function CompanySetupPage() {
               className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-primary text-white font-bold text-sm hover:opacity-90 disabled:opacity-60 transition-all mt-2"
             >
               {submitting ? (
-                <><div className="w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" /> Setting up fleet…</>
+                <><Loader2 className="w-4 h-4 animate-spin" /> Setting up fleet…</>
               ) : (
                 <><CheckCircle2 size={16} /> Continue to Fleet Dashboard <ArrowRight size={15} /></>
               )}
