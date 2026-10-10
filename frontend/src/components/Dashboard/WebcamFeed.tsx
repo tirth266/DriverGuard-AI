@@ -15,13 +15,18 @@ import {
   ArrowDown,
   PhoneCall,
 } from 'lucide-react'
-import { fetchWithAuth, buildApiUrl } from '../../services/fleetApi'
+import { fetchWithAuth, buildApiUrl, ApiError } from '../../services/fleetApi'
+import type { ScoreBreakdown, SessionEvent, SessionSummary } from '../../services/sessionSummary'
+
+// Re-exported so every existing importer of these types keeps working; they now
+// live beside the ride API client, which needs them to type a stored ride.
+export type { ScoreBreakdown, SessionEvent, SessionSummary }
 
 type CameraState = 'initializing' | 'active' | 'denied' | 'not_detected' | 'error'
 type ProcessingState = 'idle' | 'processing' | 'success' | 'error'
 type DetectionState = 'waiting' | 'no_object' | 'object_detected' | 'api_error' | 'camera_unavailable'
 type FrameFreshness = 'live' | 'processing' | 'stale' | 'backend_unavailable' | 'camera_disconnected'
-type AiStatus = 'ok' | 'backend_down' | 'no_face' | 'no_result' | 'warming_up'
+type AiStatus = 'ok' | 'backend_down' | 'no_face' | 'warming_up'
 export type CabinCategory = 'phone' | 'drink' | 'food'
 type HeadPose = 'forward' | 'away' | 'down' | 'no_face'
 
@@ -36,41 +41,15 @@ export type Detection = {
   bbox: { x1: number; y1: number; x2: number; y2: number }
 }
 
-export type SessionEvent = {
-  type: string
-  source: string
-  start_time: number
-  end_time: number
-  duration: number
-  max_confidence: number | null
-  min_measurement: number | null
-  min_score: number
-}
-
-export type ScoreBreakdown = {
-  type: string
-  count: number
-  total_seconds: number
-  points_lost: number
-}
-
-export type SessionSummary = {
-  duration_seconds: number
-  final_score: number
-  grade: string
-  lowest_session_score: number
-  points_lost: number
-  score_breakdown: ScoreBreakdown[]
-  total_events: number
-  phone_events: number
-  total_distracted_duration: number
-  events: SessionEvent[]
-  score_timeline: Array<{ offset_seconds: number; score: number }>
-}
-
 export type Telemetry = {
   score: number
   scoreAvailable: boolean
+  /**
+   * The backend session for this ride was reset before its first frame. False
+   * means the previous ride's session may still be there, so no score from it may
+   * be shown as this ride's.
+   */
+  sessionReset: boolean
   grade: string
   aiStatus: AiStatus
   failReasons: string[]
@@ -93,6 +72,8 @@ export type Telemetry = {
   headPose: HeadPose
   phoneCallSuspected: boolean
   phoneCallDuration: number
+  /** Per-model warm-up progress, e.g. "YOLO ready · MediaPipe loading". */
+  engineProgress: string | null
   cameraState: CameraState
   processingState: ProcessingState
   detectionState: DetectionState
@@ -131,7 +112,7 @@ const CAPTURE_JPEG_QUALITY = 0.7
 // Healthy cadence once a frame has been analysed.
 const FRAME_INTERVAL_MS = 50
 // How often the AI models are polled while they are still warming up.
-const ENGINE_POLL_MS = 500
+const ENGINE_POLL_MS = 300
 // Only after this long may the UI call the detection service unreachable.
 const ENGINE_READY_TIMEOUT_MS = 60000
 // Retry delays after a failed frame: 500ms, 1s, 2s, then capped at 5s.
@@ -150,37 +131,68 @@ export type ScoreDisplay = {
 
 /**
  * Single source of truth for every score display. A score only becomes real once
- * the backend has actually produced one; before that (warm-up, no signal, no
- * face) nothing may be shown as a score.
+ * this ride's session has been reset and the backend has actually produced one;
+ * before that (warm-up, no signal, no face) nothing may be shown as a score, and
+ * nothing from a previous ride may survive into it.
  */
 export function useScoreDisplay(telemetry: Partial<Telemetry>): ScoreDisplay {
-  const [everAvailable, setEverAvailable] = useState(false)
+  const [scored, setScored] = useState(false)
   const available = telemetry.scoreAvailable === true
+  const sessionReset = telemetry.sessionReset === true
 
   useEffect(() => {
-    if (available) setEverAvailable(true)
-  }, [available])
+    // The latch is per ride: a reset drops it, so the card falls back to the gray
+    // "--" state instead of showing the score the last ride ended on.
+    if (!sessionReset) {
+      setScored(false)
+      return
+    }
+    if (available) setScored(true)
+  }, [sessionReset, available])
+
+  // A score is held only when a real reason stopped this frame from producing
+  // one: a failure, no face, or a stale frame. The YOLO rate limiter is not such
+  // a reason — a skipped frame still analyses MediaPipe and reports the tracks it
+  // already holds, and its score is current.
+  const stale = telemetry.frameFreshness === 'stale' || telemetry.frameFreshness === 'backend_unavailable'
+  const blocked = stale || telemetry.aiStatus === 'backend_down' || telemetry.faceDetected === false
+  const verified = available && !stale
 
   return {
-    score: everAvailable ? (telemetry.score ?? 0) : null,
-    grade: everAvailable ? telemetry.grade || null : null,
-    held: everAvailable && !available,
+    score: scored ? (telemetry.score ?? 0) : null,
+    grade: scored ? telemetry.grade || null : null,
+    held: scored && !verified && (blocked || telemetry.yoloSkipped !== true),
   }
 }
 
 interface WebcamFeedProps {
   onTelemetryUpdate?: (telemetry: Partial<Telemetry>) => void
-  isRecording?: boolean
   className?: string
+  /**
+   * Id of the ride these frames belong to. It is sent with every frame so the
+   * backend scores them into that ride's session; null (no ride started) keeps
+   * them on the ride-less one.
+   */
+  rideId?: number | null
 }
 
-export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecording = true, className = '' }: WebcamFeedProps) {
+export default function WebcamFeed({ onTelemetryUpdate, className = '', rideId = null }: WebcamFeedProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const requestInFlightRef = useRef<boolean>(false)
+  // Read by the frame loop on every request. A ref rather than the prop itself,
+  // because the ride id is settled once, shortly after mount, and reading it
+  // directly would tear the loop down and start it again mid-ride.
+  const rideIdRef = useRef<number | null>(rideId)
+  useEffect(() => {
+    rideIdRef.current = rideId
+  }, [rideId])
+  // Readiness of the AI engine, polled from mount. The frame loop awaits this
+  // promise instead of running its own poll, so the two loops never overlap.
+  const engineReadyRef = useRef<{ promise: Promise<boolean>; resolve: (ready: boolean) => void } | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const lastBeepAtRef = useRef(0)
   const frameFreshnessRef = useRef<FrameFreshness>('stale')
@@ -528,6 +540,96 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
     }
   }, [startCamera])
 
+  // Poll model readiness from mount, in parallel with the camera setup.
+  //
+  // The camera permission prompt and the server-side model warm-up are
+  // independent, so waiting for one before starting the other only adds their
+  // durations together. The result is shared with the frame loop, which then
+  // sends the first frame the moment the models are ready.
+  useEffect(() => {
+    let stopped = false
+    let resolveEngine!: (ready: boolean) => void
+    const promise = new Promise<boolean>(resolve => { resolveEngine = resolve })
+    engineReadyRef.current = { promise, resolve: resolveEngine }
+
+    const describeProgress = (modelsReady?: { yolo?: boolean; face?: boolean; hand?: boolean }) => {
+      if (!modelsReady) return 'Connecting to the detection service...'
+      const yolo = modelsReady.yolo ? 'YOLO ready' : 'YOLO loading'
+      const mediapipe = modelsReady.face ? 'MediaPipe ready' : 'MediaPipe loading'
+      return `${yolo} · ${mediapipe}`
+    }
+
+    // A ride starts clean: the backend session of the previous ride — its score,
+    // grade, events, timeline and object tracks — is discarded here, before the
+    // frame loop is released, so no frame of this ride can ever be scored against
+    // the last one. Retried once; a 401 is not retried, because a fresh token
+    // will not appear on its own.
+    const resetRideSession = async (): Promise<boolean> => {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          await fetchWithAuth(buildApiUrl('/api/video/session/reset'), { method: 'POST' })
+          return true
+        } catch (error) {
+          if ((error as { status?: number }).status === 401) return false
+        }
+      }
+      return false
+    }
+
+    const pollEngine = async () => {
+      const sessionReset = await resetRideSession()
+      if (stopped) return
+      publishObservability({ sessionReset })
+      if (!sessionReset) {
+        // The ride could not be started clean, so no score may be presented for
+        // it: the previous ride's session may still be behind this one.
+        publishObservability({
+          cameraState: 'active',
+          processingState: 'error',
+          detectionState: 'api_error',
+          frameFreshness: 'backend_unavailable',
+          aiStatus: 'backend_down',
+          activeAlerts: [],
+          processingError: 'A new monitoring session could not be started. Check that the detection service is running, then reload.',
+        })
+      }
+
+      const deadline = Date.now() + ENGINE_READY_TIMEOUT_MS
+      while (!stopped && Date.now() < deadline) {
+        try {
+          // Authenticated like every other call here: the readiness poll needs
+          // a session, and a rejected token must be seen as an error rather than
+          // as "still warming up". fetchWithAuth parses the body and throws on a
+          // non-2xx, which the catch below already handles.
+          const body = await fetchWithAuth(buildApiUrl('/api/video/status'))
+          const modelsReady = body?.models_ready
+          if (modelsReady?.ready) {
+            publishObservability({ engineProgress: null })
+            resolveEngine(true)
+            return
+          }
+          // Real progress: which model is already loaded, which is still coming.
+          publishObservability({ engineProgress: describeProgress(modelsReady) })
+        } catch {
+          // Server not accepting connections yet: still warming up.
+          publishObservability({ engineProgress: 'Connecting to the detection service...' })
+        }
+        await new Promise(resolve => window.setTimeout(resolve, ENGINE_POLL_MS))
+      }
+      resolveEngine(false)
+    }
+    void pollEngine()
+
+    return () => {
+      stopped = true
+      // Released as ready so a re-run of this effect (or unmount) can never make
+      // the frame loop report "models did not become ready"; it checks `stopped`
+      // before it sends anything.
+      resolveEngine(true)
+      engineReadyRef.current = null
+    }
+  }, [publishObservability])
+
   // Track the real camera dimensions. Frames are only sent once these are known,
   // and the video stage is sized from them so the overlay box always matches the
   // visible video exactly.
@@ -575,10 +677,10 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
     }
 
     // The models load on a background thread, so the first frames of a session
-    // are expected to be refused. Poll readiness and stay in a neutral warm-up
-    // state instead of telling the user the service is unreachable.
+    // are expected to be refused. The readiness poll started at mount; awaiting
+    // it here keeps a neutral warm-up state instead of telling the user the
+    // service is unreachable.
     const waitForEngine = async () => {
-      const deadline = Date.now() + ENGINE_READY_TIMEOUT_MS
       publishObservability({
         cameraState: 'active',
         processingState: 'processing',
@@ -588,18 +690,7 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
         activeAlerts: [],
         processingError: null,
       })
-
-      while (!stopped && Date.now() < deadline) {
-        try {
-          const response = await fetch(buildApiUrl('/api/video/status'))
-          const body = await response.json()
-          if (body?.models_ready?.ready) return true
-        } catch {
-          // Server not accepting connections yet: still warming up.
-        }
-        await new Promise(resolve => window.setTimeout(resolve, ENGINE_POLL_MS))
-      }
-      return false
+      return engineReadyRef.current ? engineReadyRef.current.promise : false
     }
 
     const sendFrameToBackend = async () => {
@@ -643,7 +734,7 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
       try {
         const response = await fetchWithAuth(buildApiUrl('/api/video/process_frame'), {
           method: 'POST',
-          body: JSON.stringify({ frame: frameData }),
+          body: JSON.stringify({ frame: frameData, ride_id: rideIdRef.current }),
         })
 
         // Ignore stale responses (if a newer frame was already sent)
@@ -799,9 +890,10 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
 
         // Models still warming up: not a failure, keep the neutral warm-up state
         // and retry at the readiness poll rate. The refusal body is read
-        // structurally so this stays independent of the API client's error type.
-        const refused = error as { data?: { reason?: string } } | null
-        if (refused?.data?.reason === 'warming_up') {
+        // structurally, from the parsed error the API client attaches, so this
+        // stays independent of the message text.
+        const refused = error instanceof ApiError ? error.data : null
+        if (refused?.reason === 'warming_up') {
           nextDelayMs = ENGINE_POLL_MS
           publishObservability({
             cameraState: 'active',
@@ -814,8 +906,12 @@ export default function WebcamFeed({ onTelemetryUpdate, isRecording: _isRecordin
           return
         }
 
-        // Check for 401 Unauthorized - stop the retry loop on auth failure
-        isAuthError = error instanceof Error && (error.message.includes('401') || error.message.includes('HTTP 401'))
+        // An expired or revoked token: the status code decides, never the
+        // message. The backend's 401 detail is "Invalid or expired token.",
+        // which contains no "401", so matching on the text meant the loop kept
+        // submitting frames against a token the server will never accept again.
+        // The session itself is ended once, by the API client.
+        isAuthError = error instanceof ApiError && error.status === 401
         if (!isAuthError) scheduleRetry()
         setIsDistracted(false)
         setCabinObjects(EMPTY_CABIN_OBJECTS)

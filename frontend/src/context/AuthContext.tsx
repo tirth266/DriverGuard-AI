@@ -1,6 +1,8 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 import { useToast } from './ToastContext'
 import { workspaceService, type AccountType } from '../services/workspaceService'
+import { restoreSession, saveSession, saveUser, clearSession } from '../services/authStorage'
+import { setSessionExpiredHandler } from '../services/fleetApi'
 
 export type { AccountType } from '../services/workspaceService'
 
@@ -34,23 +36,36 @@ interface AuthContextType {
   loginWithGoogle: () => Promise<boolean>
   handleGoogleCallback: (token: string, rememberMe?: boolean) => Promise<boolean>
   forgotPassword: (email: string) => Promise<boolean>
-  logout: () => void
+  logout: (reason?: string) => void
   setAccountType: (type: AccountType) => void
   selectWorkspace: (type: AccountType) => void
   switchWorkspace: () => void
   completeCompanySetup: (data: CompanySetupData) => void
 }
 
-/* ─── Storage keys ───────────────────────────────────────── */
+/* ─── API base ───────────────────────────────────────────── */
 
-const TOKEN_KEY = 'driverguard_auth_token'
-const USER_KEY  = 'driverguard_user_data'
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '')
 const buildApiUrl = (path: string) => `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`
 
 /* ─── Context ────────────────────────────────────────────── */
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
+
+/**
+ * Which workspace an account is using.
+ *
+ * The server's answer decides. A workspace preference stored in the browser is
+ * a UI hint for a session that is already signed in, never an authorization
+ * input: it is writable by anyone with devtools, and the backend does not read
+ * it. Reading it ahead of the server is what let a localStorage edit move a
+ * personal account into the fleet dashboard.
+ */
+function resolveAccountType(serverUser: { role?: string; account_type?: string } | null): AccountType {
+  return serverUser?.role === 'business' || serverUser?.account_type === 'business'
+    ? 'business'
+    : 'personal'
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser]   = useState<User | null>(null)
@@ -61,39 +76,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   /* Restore session on boot */
   useEffect(() => {
     try {
-      const storedToken = localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY)
-      const storedUser  = localStorage.getItem(USER_KEY)  || sessionStorage.getItem(USER_KEY)
-      const savedWorkspace = workspaceService.getWorkspacePreference()
-      const isSelected = workspaceService.isWorkspaceSelected()
+      // One storage, one complete session: see services/authStorage. A token
+      // without its profile, or a second session in the other storage, is
+      // dropped there rather than paired across the two.
+      const restored = restoreSession()
 
-      if (storedToken && storedUser) {
-        setToken(storedToken)
-        const parsed = JSON.parse(storedUser)
-        const roleType: AccountType = savedWorkspace
-          ? savedWorkspace
-          : parsed.role === 'business' || parsed.accountType === 'business'
-          ? 'business'
-          : 'personal'
+      if (restored) {
+        setToken(restored.token)
+        const parsed = JSON.parse(restored.user)
+        const roleType = resolveAccountType(parsed)
 
         setUser({
           ...parsed,
           role: roleType,
           accountType: roleType,
-          hasSelectedWorkspace: isSelected || !!savedWorkspace,
+          hasSelectedWorkspace: workspaceService.isWorkspaceSelected(),
         })
       }
     } catch {
-      localStorage.removeItem(TOKEN_KEY)
-      localStorage.removeItem(USER_KEY)
+      clearSession()
     } finally {
       setIsLoading(false)
     }
   }, [])
 
   /* Persist user changes back to storage automatically */
-  const persistUser = useCallback((updatedUser: User, rememberMe = true) => {
-    const storage = rememberMe ? localStorage : sessionStorage
-    storage.setItem(USER_KEY, JSON.stringify(updatedUser))
+  const persistUser = useCallback((updatedUser: User) => {
+    saveUser(JSON.stringify(updatedUser))
   }, [])
 
   /* Select workspace preference */
@@ -107,7 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         accountType: type,
         hasSelectedWorkspace: true,
       }
-      persistUser(updated, true)
+      persistUser(updated)
       return updated
     })
   }, [persistUser])
@@ -121,7 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ...prev,
         hasSelectedWorkspace: false,
       }
-      persistUser(updated, true)
+      persistUser(updated)
       return updated
     })
   }, [persistUser])
@@ -129,28 +138,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   /* Handle Google OAuth callback */
   const handleGoogleCallback = useCallback(async (callbackToken: string, rememberMe = true): Promise<boolean> => {
     setIsLoading(true)
-    const savedWorkspace = workspaceService.getWorkspacePreference()
-    const isSelected = workspaceService.isWorkspaceSelected()
 
     try {
       const res = await fetch(buildApiUrl('/api/auth/me'), {
         headers: { 'Authorization': `Bearer ${callbackToken}` }
       })
-      
+
       if (!res.ok) {
         throw new Error('Invalid token from Google OAuth')
       }
-      
+
       const data = await res.json()
       if (!data.success || !data.user) {
         throw new Error('Failed to get user from token')
       }
 
-      const roleType: AccountType = savedWorkspace
-        ? savedWorkspace
-        : data.user.role === 'business' || data.user.account_type === 'business'
-        ? 'business'
-        : 'personal'
+      const roleType = resolveAccountType(data.user)
 
       const authUser: User = {
         id: data.user.id,
@@ -162,15 +165,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         accountType: roleType,
         isFirstLogin: data.user.is_first_login ?? data.user.isFirstLogin ?? false,
         companySetupComplete: data.user.company_setup_complete ?? data.user.companySetupComplete ?? false,
-        hasSelectedWorkspace: isSelected || !!savedWorkspace,
+        hasSelectedWorkspace: workspaceService.isWorkspaceSelected(),
       }
 
       setToken(callbackToken)
       setUser(authUser)
 
-      const storage = rememberMe ? localStorage : sessionStorage
-      storage.setItem(TOKEN_KEY, callbackToken)
-      persistUser(authUser, rememberMe)
+      // The workspace this account lands in is the one the server reported; it
+      // is only remembered so the account finds it again next time.
+      workspaceService.saveWorkspacePreference(roleType)
+      saveSession(callbackToken, JSON.stringify(authUser), rememberMe)
 
       setIsLoading(false)
       toast.success('Authenticated via Google', `Welcome, ${authUser.name}!`)
@@ -183,13 +187,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       toast.error('Google authentication failed', message)
       return false
     }
-  }, [persistUser, toast])
+  }, [toast])
 
   /* ── Login ─────────────────────────────────────────────── */
   const login = async (email: string, _pass: string, rememberMe = true): Promise<boolean> => {
     setIsLoading(true)
-    const savedWorkspace = workspaceService.getWorkspacePreference()
-    const isSelected = workspaceService.isWorkspaceSelected()
 
     try {
       const res = await fetch(buildApiUrl('/api/auth/login'), {
@@ -198,17 +200,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ email, password: _pass })
       })
 
-      const data = await res.json()
+      const data = await res.json().catch(() => null)
 
-      if (!res.ok || !data.success) {
-        throw new Error(data.message || 'Login failed')
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.message || 'Login failed')
       }
 
-      const roleType: AccountType = savedWorkspace
-        ? savedWorkspace
-        : data.user.role === 'business' || data.user.account_type === 'business'
-        ? 'business'
-        : 'personal'
+      const roleType = resolveAccountType(data.user)
 
       const authUser: User = {
         id: data.user.id,
@@ -220,15 +218,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         accountType: roleType,
         isFirstLogin: data.user.is_first_login ?? data.user.isFirstLogin ?? false,
         companySetupComplete: data.user.company_setup_complete ?? data.user.companySetupComplete ?? false,
-        hasSelectedWorkspace: isSelected || !!savedWorkspace,
+        hasSelectedWorkspace: workspaceService.isWorkspaceSelected(),
       }
 
       setToken(data.token)
       setUser(authUser)
 
-      const storage = rememberMe ? localStorage : sessionStorage
-      storage.setItem(TOKEN_KEY, data.token)
-      persistUser(authUser, rememberMe)
+      // Remembering the workspace this account resolved to is a convenience for
+      // the next sign-in. It is never consulted ahead of the server's answer.
+      workspaceService.saveWorkspacePreference(roleType)
+      saveSession(data.token, JSON.stringify(authUser), rememberMe)
 
       setIsLoading(false)
       toast.success('Welcome Back!', `Logged in as ${authUser.name}`)
@@ -253,10 +252,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ name, company, email, password: _pass, role })
       })
 
-      const data = await res.json()
+      const data = await res.json().catch(() => null)
 
-      if (!res.ok || !data.success) {
-        throw new Error(data.message || 'Signup failed')
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.message || 'Signup failed')
       }
 
       const roleType: AccountType = role
@@ -277,8 +276,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setToken(data.token)
       setUser(authUser)
-      localStorage.setItem(TOKEN_KEY, data.token)
-      persistUser(authUser)
+      saveSession(data.token, JSON.stringify(authUser), true)
 
       setIsLoading(false)
       toast.success('Account Created!', `Welcome to DriverGuard AI, ${name}!`)
@@ -300,10 +298,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   /* ── Forgot password ───────────────────────────────────── */
-  const forgotPassword = async (email: string): Promise<boolean> => {
-    await new Promise(r => setTimeout(r, 600))
-    toast.info('Reset Link Sent', `Instructions sent to ${email}`)
-    return true
+  /**
+   * Password reset is not available.
+   *
+   * There is no password-reset endpoint on the backend, so this cannot send a
+   * link and must not report that one was sent. It returns false and tells the
+   * user what to do instead. Reinstating real reset means adding the backend
+   * endpoint first, then calling it here.
+   */
+  const forgotPassword = async (_email: string): Promise<boolean> => {
+    toast.error(
+      'Password Reset Unavailable',
+      'There is no password reset endpoint yet, so no email was sent. Sign in with Google, or contact your administrator.',
+    )
+    return false
   }
 
   /* ── Set account type ──────────────────────────────────── */
@@ -312,8 +320,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(prev => {
       if (!prev) return prev
       const updated: User = { ...prev, role: type, accountType: type, isFirstLogin: false, hasSelectedWorkspace: true }
-      if (localStorage.getItem(USER_KEY)) persistUser(updated, true)
-      else persistUser(updated, false)
+      persistUser(updated)
       return updated
     })
   }, [persistUser])
@@ -327,23 +334,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         company: data.companyName,
         companySetupComplete: true,
       }
-      if (localStorage.getItem(USER_KEY)) persistUser(updated, true)
-      else persistUser(updated, false)
+      persistUser(updated)
       return updated
     })
   }, [persistUser])
 
-  /* ── Logout (Preserves driverguard_account_type & workspace_selected) ── */
-  const logout = () => {
+  /* ── Logout ───────────────────────────────────────────── */
+  // A 401 can arrive from many requests at once, so the first one ends the
+  // session and the rest are ignored. Without this the frame loop alone would
+  // call logout once per rejected frame.
+  const logout = useCallback((reason?: string) => {
+    if (!token && !user) return
     setUser(null)
     setToken(null)
-    localStorage.removeItem(TOKEN_KEY)
-    localStorage.removeItem(USER_KEY)
-    sessionStorage.removeItem(TOKEN_KEY)
-    sessionStorage.removeItem(USER_KEY)
-    // NOTE: Normal logout intentionally preserves workspace preferences
-    toast.info('Logged Out', 'You have been safely signed out.')
-  }
+    // Everything this account left behind, in both storages: the session, and
+    // the workspace it resolved to. Leaving the workspace behind meant the next
+    // account to sign in on this browser inherited the previous one's, and
+    // because the workspace was read back on sign-in it also decided where that
+    // account landed.
+    clearSession()
+    workspaceService.clearWorkspacePreference()
+    toast.info('Logged Out', reason ?? 'You have been safely signed out.')
+  }, [toast, token, user])
+
+  /* Any rejected token ends the session, wherever it is noticed. */
+  useEffect(() => {
+    setSessionExpiredHandler((reason) => logout(reason || 'Your session has expired. Please sign in again.'))
+    return () => setSessionExpiredHandler(null)
+  }, [logout])
 
   return (
     <AuthContext.Provider value={{

@@ -3,7 +3,6 @@ import { motion } from 'framer-motion'
 import {
   Truck,
   AlertTriangle,
-  TrendingUp,
   Activity,
 } from 'lucide-react'
 import SectionTitle from '../shared/SectionTitle'
@@ -51,20 +50,39 @@ function AnimatedNumber({ value, suffix = '', duration = 1.4 }: { value: number;
   )
 }
 
+/**
+ * This section is a static illustration of the report layout.
+ *
+ * Every figure in it is a fixed sample value. The public site has no session and
+ * no fleet, and no endpoint aggregates fleet-wide metrics, so nothing here is
+ * live. The banner says so above the figures, and the animated counters are kept
+ * only because the layout is the point being illustrated — the numbers carry no
+ * meaning. Real per-ride figures appear on a ride report after a monitored
+ * session.
+ */
 export default memo(function KPISection() {
   return (
     <section
       id="metrics"
       className="py-20 md:py-28 px-6 max-w-[1280px] mx-auto"
-      aria-label="Live Fleet Safety Overview"
+      aria-label="Example fleet safety report layout"
     >
       <SectionTitle
-        badge="Live Telemetry Dashboard"
-        title="Live Fleet Safety Status"
-        subtitle="Real-time aggregation from active transport vehicles operating across regional networks."
+        badge="Report Layout Example"
+        title="Fleet Safety Report"
+        subtitle="An illustration of the metrics a ride report presents. The values are samples, not live data."
         centered
-        className="mb-14"
+        className="mb-10"
       />
+
+      <div className="mb-10 flex items-start gap-2.5 rounded-[14px] border border-warning/30 bg-warning/5 px-4 py-3">
+        <AlertTriangle size={16} className="text-warning flex-shrink-0 mt-0.5" />
+        <p className="text-xs text-text-secondary leading-relaxed">
+          <strong className="text-text-primary">Sample data.</strong> This page is public and has no
+          account, so nothing below is measured. Actual figures come from a monitored ride's own
+          report.
+        </p>
+      </div>
 
       {/* ─── Asymmetrical Visual Composition ─── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
@@ -76,9 +94,8 @@ export default memo(function KPISection() {
               <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-text-muted">
                 Primary Fleet Index
               </span>
-              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-safe/10 border border-safe/25 text-safe text-[11px] font-mono font-bold">
-                <span className="w-1.5 h-1.5 rounded-full bg-safe" />
-                <span>ACTIVE MONITOR</span>
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-warning/10 border border-warning/25 text-warning text-[11px] font-mono font-bold">
+                <span>EXAMPLE</span>
               </div>
             </div>
 
@@ -94,24 +111,23 @@ export default memo(function KPISection() {
               </p>
               
               <div className="flex items-center gap-2 mt-1.5">
-                <span className="inline-flex items-center gap-0.5 text-xs font-semibold text-safe font-mono">
-                  <TrendingUp size={13} /> ↑ 2.1%
+                <span className="text-xs text-text-muted">
+                  Sample value. A real score comes from one ride's own report.
                 </span>
-                <span className="text-xs text-text-muted">compared to yesterday</span>
               </div>
             </div>
 
             <p className="text-sm text-text-secondary leading-[1.6]">
-              Real-time cabin compliance across all connected routes. 98.4% seatbelt utilization
-              and zero critical drowsy driving events in the past 4 hours.
+              Sample figures illustrating a fleet-level roll-up. Seatbelt utilization is not
+              among them: the pipeline does not detect seatbelts.
             </p>
           </div>
 
           {/* Calibrated Safety Bar */}
           <div className="pt-6 border-t border-border/80 mt-6 space-y-2">
             <div className="flex justify-between text-xs font-mono text-text-muted">
-              <span>SAFETY TARGET (95.0%)</span>
-              <span className="text-safe font-bold">OPTIMAL</span>
+              <span>SAMPLE TARGET (95.0%)</span>
+              <span className="text-text-muted font-bold">ILLUSTRATED</span>
             </div>
             <div className="h-1.5 w-full bg-surface-subtle rounded-full overflow-hidden">
               <motion.div
@@ -151,9 +167,9 @@ export default memo(function KPISection() {
                 </p>
               </div>
 
-              <div className="text-[11px] font-mono text-safe flex items-center gap-1 pt-2 border-t border-border/60">
+              <div className="text-[11px] font-mono text-text-muted flex items-center gap-1 pt-2 border-t border-border/60">
                 <Activity size={12} />
-                <span>100% Telemetry Synced</span>
+                <span>Sample figure</span>
               </div>
             </div>
 
@@ -236,12 +252,12 @@ export default memo(function KPISection() {
       <div className="mt-10 pt-8 border-t border-border">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-safe animate-pulse" />
+            <span className="w-2 h-2 rounded-full bg-text-muted" />
             <span className="text-xs font-mono uppercase tracking-wider text-text-secondary font-semibold">
-              Live Fleet Stream
+              Sample Event Stream
             </span>
           </div>
-          <span className="text-xs font-mono text-text-muted">Real-time Feed</span>
+          <span className="text-xs font-mono text-text-muted">Illustration only</span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -263,9 +279,9 @@ export default memo(function KPISection() {
               <span className="text-text-muted">4m ago</span>
             </div>
             <p className="text-xs text-text-secondary">
-              John Driver maintaining optimal posture. Cabin verified safe.
+              Driver eyes open, head forward. No confirmed events.
             </p>
-            <span className="text-[10px] font-mono text-safe font-semibold">100% ATTENTIVE</span>
+            <span className="text-[10px] font-mono text-safe font-semibold">NO EVENTS</span>
           </div>
 
           <div className="p-4 rounded-[12px] bg-surface/50 border border-border/70 flex flex-col justify-between space-y-2">

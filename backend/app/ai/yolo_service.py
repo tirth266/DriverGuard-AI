@@ -19,6 +19,7 @@ from app.ai.session_manager import (
     Track,
     TRACK_CLEAR_SECONDS,
     TRACK_OCCLUSION_SECONDS,
+    TRACK_REVALIDATE_SECONDS,
 )
 
 logger = logging.getLogger(__name__)
@@ -54,12 +55,24 @@ YOLO_IMGSZ = 640
 # candidate. The per-class gates below are applied in code, not in the model call.
 YOLO_FLOOR_CONF = 0.15
 # Hysteresis: a NEW track needs the enter threshold, an already matched track
-# stays alive on a much weaker detection (anything at or above YOLO_FLOOR_CONF).
+# stays alive on a much weaker detection, but never on an arbitrarily weak one.
 PHONE_ENTER_CONF = 0.40
 CABIN_ENTER_CONF = 0.35
+# Lower bound for keeping an existing track alive. Below it a detection may not
+# extend a track, relabel it or drag its box onto another object; the phone gate
+# is higher because a phone is the one class this product penalises.
+PHONE_STAY_CONF = 0.30
+CABIN_STAY_CONF = 0.20
 
 # Greedy IoU matching threshold for associating a detection with a track.
 TRACK_MATCH_IOU = 0.3
+# A detection of a different class this strongly overlapping an existing track
+# replaces it: the object in that box changed identity, so the old track must not
+# survive and claim the new object's box.
+TRACK_CONFLICT_IOU = 0.30
+# The hand must have covered the object just now for the occlusion carry-over to
+# be evidence of a hidden object rather than of a track that already went stale.
+TRACK_OCCLUSION_ENTRY_SECONDS = 0.5
 
 # Hand / mouth association is bbox-proximity based. Margins are a fraction of
 # frame width so the tolerance scales with resolution.
@@ -73,6 +86,11 @@ YOLO_MIN_INTERVAL_MS = 250
 def enter_threshold(category: str) -> float:
     """Confidence a brand new track needs before it is allowed to exist."""
     return PHONE_ENTER_CONF if category == "phone" else CABIN_ENTER_CONF
+
+
+def stay_threshold(category: str) -> float:
+    """Lowest confidence that may keep an existing track of this category alive."""
+    return PHONE_STAY_CONF if category == "phone" else CABIN_STAY_CONF
 
 
 def iou(first: Dict[str, int], second: Dict[str, int]) -> float:
@@ -113,28 +131,34 @@ class YOLOAIService:
 
     def load_model(self, custom_path: Optional[str] = None) -> bool:
         """
-        Loads the YOLO11 Object Detection model once at startup.
-        Strictly validates that the loaded model is an Object Detection model,
-        rejecting classification checkpoints.
+        Loads the YOLO11 Object Detection model once at startup, from a local file.
+
+        Only an explicit local path is ever loaded. There is no bare model name and
+        no Ultralytics Hub fallback, so a missing weights file is reported instead
+        of downloaded. Strictly validates that the loaded model is an Object
+        Detection model, rejecting classification checkpoints.
         """
+        from app.config import resolve_from_backend
+
         try:
             base_dir = Path(__file__).resolve().parent.parent.parent  # backend/
-            candidates: List[Path] = []
+            raw_path = custom_path or os.getenv("YOLO_MODEL_PATH") or (
+                base_dir / "models" / "trained" / "yolo11" / "detection" / "best.pt"
+            )
+            weights = Path(resolve_from_backend(str(raw_path)))
 
-            if custom_path:
-                candidates.append(Path(custom_path))
+            if not weights.is_file() or weights.stat().st_size == 0:
+                # No download, ever. The one-time installer puts the file here.
+                logger.error(
+                    "[YOLO Detection] Missing local model file: %s — run: python scripts/setup_models.py",
+                    weights,
+                )
+                print(f"[YOLO Detection] Missing local model file: {weights} — run: python scripts/setup_models.py")
+                self.is_loaded = False
+                return False
 
-            env_path = os.getenv("YOLO_MODEL_PATH")
-            if env_path:
-                candidates.append(Path(env_path))
-
-            # Detection model locations
-            candidates.extend([
-                base_dir / "models" / "trained" / "yolo11" / "detection" / "best.pt",
-                base_dir / "models" / "trained" / "yolo11" / "detection" / "yolo11n.pt",
-                base_dir / "yolo11n.pt",
-                base_dir.parent / "yolo11n.pt",
-            ])
+            candidate_path = str(weights)
+            logger.info(f"[YOLO Detection] Loading local model: {candidate_path}")
 
             from ultralytics import YOLO
             import torch
@@ -142,72 +166,42 @@ class YOLOAIService:
             # Determine compute device
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
-            last_error = None
-
-            for p in candidates:
-                if not p.exists() or not p.is_file():
-                    continue
-
-                candidate_path = str(p.resolve())
-                logger.info(f"[YOLO Detection] Testing candidate model: {candidate_path}")
-                print(f"[YOLO Detection] Testing candidate model: {candidate_path}")
-
-                try:
-                    loaded_model = YOLO(candidate_path)
-                    model_task = getattr(loaded_model, "task", "detect")
-                    model_classes = getattr(loaded_model, "names", {})
-
-                    # Strict Detection Validation Guards
-                    if model_task == "classify" or "-cls" in p.name.lower():
-                        raise ValueError(
-                            f"Expected YOLO Object Detection model, but a Classification model was loaded ('{p.name}')."
-                        )
-
-                    if model_task != "detect":
-                        raise ValueError(
-                            f"Invalid model task '{model_task}' in '{p.name}' (expected 'detect')."
-                        )
-
-                    # Validation passed: assign model
-                    self.model_path = candidate_path
-                    self.model = loaded_model
-                    self.task = "detect"
-                    self._bind_model_classes(model_classes)
-                    self.is_loaded = True
-
-                    logger.info(f"[YOLO Detection] Model loaded successfully: {self.model_path}")
-                    logger.info(f"[YOLO Detection] Device: {self.device.upper()} | Task: {self.task} | Classes: {len(self.classes)}")
-                    logger.info(f"[YOLO Detection] Monitored cabin classes: {sorted(self.cabin_classes)}")
-                    print(f"[YOLO Detection] Model loaded successfully: {self.model_path}")
-                    print(f"[YOLO Detection] Device: {self.device.upper()} | Task: {self.task} | Classes ({len(self.classes)})")
-                    print(f"[YOLO Detection] Monitored cabin classes: {sorted(self.cabin_classes)}")
-                    return True
-
-                except Exception as candidate_err:
-                    last_error = candidate_err
-                    logger.warning(f"[YOLO Detection] Candidate '{p.name}' rejected: {candidate_err}")
-                    print(f"[YOLO Detection] Candidate '{p.name}' rejected: {candidate_err}")
-                    continue
-
-            # If no local candidate was valid, attempt to load default yolo11n.pt from Ultralytics Hub
             try:
-                logger.info("[YOLO Detection] Falling back to standard yolo11n.pt detection checkpoint...")
-                loaded_model = YOLO("yolo11n.pt")
-                if getattr(loaded_model, "task", "detect") == "detect":
-                    self.model_path = "yolo11n.pt"
-                    self.model = loaded_model
-                    self.task = "detect"
-                    self._bind_model_classes(getattr(loaded_model, "names", {}))
-                    self.is_loaded = True
-                    return True
-            except Exception as hub_err:
-                last_error = hub_err
+                loaded_model = YOLO(candidate_path)
+            except Exception as candidate_err:
+                logger.error(f"[YOLO Detection] Failed to load {candidate_path}: {candidate_err}")
+                print(f"[YOLO Detection] Failed to load {candidate_path}: {candidate_err}")
+                self.is_loaded = False
+                return False
 
-            err_msg = f"No valid YOLO Object Detection model could be loaded. Last error: {last_error}"
-            logger.error(f"[YOLO Detection] {err_msg}")
-            print(f"[YOLO Detection] ERROR: {err_msg}")
-            self.is_loaded = False
-            return False
+            model_task = getattr(loaded_model, "task", "detect")
+            model_classes = getattr(loaded_model, "names", {})
+
+            # Strict Detection Validation Guards
+            if model_task == "classify" or "-cls" in weights.name.lower():
+                raise ValueError(
+                    f"Expected YOLO Object Detection model, but a Classification model was loaded ('{weights.name}')."
+                )
+
+            if model_task != "detect":
+                raise ValueError(
+                    f"Invalid model task '{model_task}' in '{weights.name}' (expected 'detect')."
+                )
+
+            # Validation passed: assign model
+            self.model_path = candidate_path
+            self.model = loaded_model
+            self.task = "detect"
+            self._bind_model_classes(model_classes)
+            self.is_loaded = True
+
+            logger.info(f"[YOLO Detection] Model loaded successfully: {self.model_path}")
+            logger.info(f"[YOLO Detection] Device: {self.device.upper()} | Task: {self.task} | Classes: {len(self.classes)}")
+            logger.info(f"[YOLO Detection] Monitored cabin classes: {sorted(self.cabin_classes)}")
+            print(f"[YOLO Detection] Model loaded successfully: {self.model_path}")
+            print(f"[YOLO Detection] Device: {self.device.upper()} | Task: {self.task} | Classes ({len(self.classes)})")
+            print(f"[YOLO Detection] Monitored cabin classes: {sorted(self.cabin_classes)}")
+            return True
 
         except Exception as e:
             logger.error(f"[YOLO Detection] Failed to load model: {e}")
@@ -294,7 +288,10 @@ class YOLOAIService:
         if not self.is_loaded or self.model is None:
             return
         try:
-            self.run_inference(np.zeros((YOLO_IMGSZ, YOLO_IMGSZ, 3), dtype=np.uint8))
+            # A captured frame arrives at the YOLO_IMGSZ width and 16:9, so the
+            # warm-up uses that shape rather than a square one: identical letterbox
+            # and identical imgsz=640 network input as the first live frame.
+            self.run_inference(np.zeros((YOLO_IMGSZ // 2, YOLO_IMGSZ, 3), dtype=np.uint8))
             logger.info("[YOLO Detection] Warmup complete (imgsz=%d, conf floor=%.2f)", YOLO_IMGSZ, YOLO_FLOOR_CONF)
         except Exception as e:
             logger.warning("[YOLO Detection] Warmup failed: %s", e)
@@ -310,15 +307,23 @@ class YOLOAIService:
         """
         Greedy IoU matching against this session's tracks, then age out.
 
-        Matched tracks survive on a weak detection (hysteresis). A candidate with
-        no match must clear the enter threshold to start a new track.
+        A track only matches its own class, and only on a detection at or above
+        that class's stay threshold, so a weak read can neither extend it nor
+        relabel it. A candidate with no match must clear the enter threshold to
+        start a new track.
         """
-        proximity_margin = HAND_PROXIMITY_MARGIN * frame_width
+        # A strong detection of another class takes the box over from whatever is
+        # on it, so the old track is dropped before matching: this is what stops a
+        # stale phone from being carried under a hand over a bottle.
+        self._drop_conflicting_tracks(session, candidates)
 
         pairs: List[Tuple[float, str, int]] = []
         for track_id, track in session.tracks.items():
+            stay = stay_threshold(track.category)
             for index, candidate in enumerate(candidates):
-                if candidate["category"] != track.category:
+                if candidate["class_name"] != track.class_name:
+                    continue
+                if candidate["confidence"] < stay:
                     continue
                 overlap = iou(track.bbox, candidate["bbox"])
                 if overlap >= TRACK_MATCH_IOU:
@@ -332,9 +337,13 @@ class YOLOAIService:
                 continue
             track = session.tracks[track_id]
             candidate = candidates[index]
+            enter = enter_threshold(track.category)
             track.bbox = candidate["bbox"]
             track.confidence = candidate["confidence"]
             track.last_matched = now
+            track.last_match_conf = candidate["confidence"]
+            if candidate["confidence"] >= enter:
+                track.last_strong_match = now
             track.hits.append(True)
             track.confirmed = track.confirmed or sum(track.hits) >= CONFIRM_MIN_HITS
             track.clear_occlusion()
@@ -355,15 +364,54 @@ class YOLOAIService:
                 bbox=candidate["bbox"],
                 confidence=candidate["confidence"],
                 last_matched=now,
+                last_match_conf=candidate["confidence"],
+                last_strong_match=now,
             )
             track.hits.append(True)
             track.confirmed = sum(track.hits) >= CONFIRM_MIN_HITS
             session.tracks[track.track_id] = track
 
-        # Age out unmatched tracks: a hand covering the object is not evidence
-        # that the object left the cabin, so those tracks are carried longer.
+        self._age_out_tracks(session, hand_boxes, frame_width, now, matched_tracks)
+        return [track for track in session.tracks.values() if track.confirmed]
+
+    @staticmethod
+    def _drop_conflicting_tracks(session: SessionState, candidates: List[Dict[str, Any]]) -> None:
+        """
+        Drop tracks whose box now holds a confidently detected object of another class.
+
+        The person box is skipped: it is a container for every cabin object, not a
+        competing one, and it routinely overlaps whatever the driver is holding.
+        """
+        for candidate in candidates:
+            if candidate["category"] == PERSON_CATEGORY:
+                continue
+            if candidate["confidence"] < enter_threshold(candidate["category"]):
+                continue
+            for track_id, track in list(session.tracks.items()):
+                if track.class_name == candidate["class_name"]:
+                    continue
+                if iou(track.bbox, candidate["bbox"]) >= TRACK_CONFLICT_IOU:
+                    del session.tracks[track_id]
+
+    def _age_out_tracks(
+        self,
+        session: SessionState,
+        hand_boxes: Optional[List[Dict[str, int]]],
+        frame_width: int,
+        now: float,
+        matched_ids: Optional[set] = None,
+    ) -> None:
+        """
+        Drop unmatched tracks in place. One rule set, whether YOLO ran or not.
+
+        A track is dropped unless it was recently matched above its own enter
+        threshold. Occlusion is the only exception: a hand over the object, a last
+        match at full confidence and a match this very recently are the only
+        conditions that let a hidden object outlive the clear time.
+        """
+        proximity_margin = HAND_PROXIMITY_MARGIN * frame_width
         for track_id in list(session.tracks):
-            if track_id in matched_tracks:
+            if matched_ids and track_id in matched_ids:
                 continue
             track = session.tracks[track_id]
             idle = now - track.last_matched
@@ -371,13 +419,20 @@ class YOLOAIService:
                 self._boxes_overlap(track.bbox, hand_box, proximity_margin)
                 for hand_box in (hand_boxes or [])
             )
-            if track.confirmed and hand_covered and idle <= TRACK_OCCLUSION_SECONDS:
+            if (
+                track.confirmed
+                and hand_covered
+                and track.last_match_conf >= enter_threshold(track.category)
+                and idle <= TRACK_OCCLUSION_ENTRY_SECONDS
+            ):
                 track.occluded = True
-                continue
-            if idle > TRACK_CLEAR_SECONDS:
-                del session.tracks[track_id]
 
-        return [track for track in session.tracks.values() if track.confirmed]
+            if track.occluded and hand_covered and idle <= TRACK_OCCLUSION_SECONDS:
+                continue
+            if now - track.last_strong_match > TRACK_REVALIDATE_SECONDS:
+                del session.tracks[track_id]
+            elif idle > TRACK_CLEAR_SECONDS:
+                del session.tracks[track_id]
 
     def reuse_tracks(
         self,
@@ -394,31 +449,11 @@ class YOLOAIService:
         their own timers, so the counts stay truthful rather than dropping to zero.
         """
         session = self._get_session(user_id, ride_id)
+        now = time.monotonic()
         with session._lock:
-            tracks = self._expire_tracks(session, hand_boxes, frame_width, time.monotonic())
-        return self._describe_tracks(tracks, hand_boxes, mouth_box, frame_width)
-
-    def _expire_tracks(
-        self,
-        session: SessionState,
-        hand_boxes: Optional[List[Dict[str, int]]],
-        frame_width: int,
-        now: float,
-    ) -> List[Track]:
-        """Drop tracks past their clear time, marking hand-covered ones occluded."""
-        proximity_margin = HAND_PROXIMITY_MARGIN * frame_width
-        for track_id in list(session.tracks):
-            track = session.tracks[track_id]
-            idle = now - track.last_matched
-            hand_covered = any(
-                self._boxes_overlap(track.bbox, hand_box, proximity_margin)
-                for hand_box in (hand_boxes or [])
-            )
-            if track.confirmed and hand_covered and idle <= TRACK_OCCLUSION_SECONDS:
-                track.occluded = True
-            elif idle > TRACK_CLEAR_SECONDS:
-                del session.tracks[track_id]
-        return [track for track in session.tracks.values() if track.confirmed]
+            self._age_out_tracks(session, hand_boxes, frame_width, now)
+            tracks = [track for track in session.tracks.values() if track.confirmed]
+        return self._describe_tracks(tracks, hand_boxes, mouth_box, frame_width, now)
 
     def _describe_tracks(
         self,
@@ -426,6 +461,7 @@ class YOLOAIService:
         hand_boxes: Optional[List[Dict[str, int]]],
         mouth_box: Optional[Dict[str, int]],
         frame_width: int,
+        now: float,
     ) -> Dict[str, Any]:
         """Build the object-event payload from a set of confirmed tracks."""
         detections: List[Dict[str, Any]] = []
@@ -450,7 +486,16 @@ class YOLOAIService:
         alerts: List[str] = []
         active_alerts: List[str] = []
 
-        phone_dets = [d for d in detections if d["category"] == "phone"]
+        # An occluded track is still drawn, so a hand over a real object stays
+        # visible. Past the clear time that box is only a guess, so it is no
+        # longer evidence: it may not raise or extend an event, or a phone hidden
+        # under a hand would keep penalising the driver for as long as it is held.
+        counting = [
+            detection for track, detection in zip(confirmed_tracks, detections)
+            if not track.occluded or now - track.last_matched <= TRACK_CLEAR_SECONDS
+        ]
+
+        phone_dets = [d for d in counting if d["category"] == "phone"]
         if phone_dets:
             best_phone = max(phone_dets, key=lambda d: d["confidence"])
             active_events["phone_use"] = best_phone["confidence"]
@@ -462,7 +507,7 @@ class YOLOAIService:
         proximity_margin = HAND_PROXIMITY_MARGIN * frame_width
         mouth_margin = MOUTH_PROXIMITY_MARGIN * frame_width
         contact_confidences = [
-            d["confidence"] for d in detections
+            d["confidence"] for d in counting
             if d["category"] in ("drink", "food") and (
                 any(self._boxes_overlap(d["bbox"], hand_box, proximity_margin) for hand_box in (hand_boxes or []))
                 or bool(mouth_box) and self._boxes_overlap(d["bbox"], mouth_box, mouth_margin)
@@ -539,12 +584,32 @@ class YOLOAIService:
             session.yolo_runs += 1
             confirmed_tracks = self._update_tracks(session, candidates, hand_boxes, frame_width, now)
 
-        return self._describe_tracks(confirmed_tracks, hand_boxes, mouth_box, frame_width)
+        return self._describe_tracks(confirmed_tracks, hand_boxes, mouth_box, frame_width, now)
 
-    def get_session_summary(self, user_id: str, ride_id: Optional[int] = None) -> Dict[str, Any]:
-        """Get session summary for a user/ride."""
-        session = self._get_session(user_id, ride_id)
+    def get_session_summary(self, user_id: str, ride_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        """
+        The session's report, or None when there is no measured ride to report.
+
+        Read through `find_session`, never `get_session`: reading a report must
+        not bring a session into existence. A session created by a read has
+        scored no frame, so it carries START_SCORE and reads as a perfect,
+        event-free ride — a report that describes a ride that never happened.
+        """
+        session = session_manager.find_session(user_id, ride_id)
+        if session is None:
+            return None
         return session.get_session_summary()
+
+    def finalize_session(self, user_id: str, ride_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        """
+        Freeze a user's session for a ride and return its final report.
+
+        The only read that can produce the report of a finished ride: it is taken
+        while the session is still the one the ride's frames were scored into, and
+        it freezes that session so no later frame can change the answer. Returns
+        None when the ride was never scored, which is not a clean ride.
+        """
+        return session_manager.finalize_session(user_id, ride_id)
 
     def reset_session(self, user_id: str, ride_id: Optional[int] = None) -> None:
         """Reset session for a user/ride."""

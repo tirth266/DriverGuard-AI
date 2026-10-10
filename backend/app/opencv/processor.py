@@ -7,6 +7,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 import cv2
 import numpy as np
+from anyio import CapacityLimiter
+from starlette.concurrency import run_in_threadpool
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +28,11 @@ def mark_warmup_finished() -> None:
     """Called by the startup thread once every model has been loaded and warmed."""
     _warmup_finished.set()
 
-# Ordered by how badly they invalidate the live AI signal.
-AI_STATUS_PRIORITY = ("backend_down", "no_face", "no_result")
+# The only statuses that mean "this frame produced no usable signal", ordered by
+# how badly each invalidates it. A frame whose models ran and confirmed nothing is
+# not on this list: the pipeline answered, the cabin was empty, and that is a
+# result the client already reads from `detection_count` and `cabin_objects`.
+AI_STATUS_PRIORITY = ("backend_down", "no_face")
 
 # Torch defaults to the logical core count, which oversubscribes on SMT machines
 # and slows inference. One thread per physical core is the usual CPU win.
@@ -36,6 +41,17 @@ TORCH_NUM_THREADS = os.cpu_count() or 1
 # YOLO and MediaPipe share the CPU, so each frame runs both at once: two workers,
 # one stateless submission each. The MediaPipe side runs its two models internally.
 _INFERENCE_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="dg-infer")
+
+# Decoding a frame and waiting on the pool below is blocking work, so callers hand
+# the whole pipeline to a worker thread instead of running it on the event loop.
+# Exactly one frame pipeline runs at a time, as it did when the work ran inline:
+# a single frame already saturates the CPU, so a second concurrent one adds no
+# throughput and only lengthens the queue. Callers beyond the first wait here, on
+# the event loop, rather than parking threads that would only block on the pool.
+# A dedicated limiter rather than AnyIO's shared default one keeps the app's
+# other synchronous dependencies (auth lookups, DB sessions) a thread of their
+# own while frames are being processed.
+_FRAME_LIMITER = CapacityLimiter(1)
 
 
 def configure_torch_threads() -> int:
@@ -127,22 +143,30 @@ class OpenCVFrameProcessor:
         session = session_manager.get_session(user_id, ride_id)
 
         # YOLO is rate limited per session; MediaPipe still runs on every frame and
-        # the surviving tracks simply age by time.
+        # the surviving tracks simply age by time. Three outcomes are kept apart,
+        # because collapsing them is what made a healthy frame look like a dead
+        # pipeline: a fresh inference, a benign skip by the rate limiter, and a
+        # genuine failure. Only the last one takes the object signal away.
         yolo_due = (
             session.last_yolo_monotonic == 0.0
             or (time.monotonic() - session.last_yolo_monotonic) * 1000.0 >= YOLO_MIN_INTERVAL_MS
         )
-        yolo_ran = yolo_service.is_loaded and yolo_due
+        yolo_attempted = yolo_service.is_loaded and yolo_due
+        yolo_ran = yolo_attempted
         yolo_error = None if yolo_service.is_loaded else "YOLO detection service is not ready"
 
         small = mediapipe_service.downscale(frame)
         mediapipe_future = _safe_submit(_INFERENCE_POOL, mediapipe_service.detect_landmarks, small)
         yolo_future = _safe_submit(_INFERENCE_POOL, yolo_service.run_inference, frame) if yolo_ran else None
 
-        detected, _mediapipe_wall = self._collect(mediapipe_future, "mediapipe")
-        candidates, yolo_ms = self._collect(yolo_future, "yolo")
-        if yolo_future is not None and candidates is None:
+        detected, _mediapipe_wall, _mediapipe_error = self._collect(mediapipe_future, "mediapipe")
+        candidates, yolo_ms, yolo_inference_error = self._collect(yolo_future, "yolo")
+        if yolo_attempted and candidates is None:
+            # Inference ran and raised. That is a failure, not the limiter skipping
+            # this frame: reading it as a healthy empty result would turn a broken
+            # detector into a clean cabin, and hand back a score nothing measured.
             yolo_ran = False
+            yolo_error = str(yolo_inference_error) or "YOLO inference failed"
 
         logic_started = time.perf_counter()
         frame_width, frame_height = frame.shape[1], frame.shape[0]
@@ -196,12 +220,26 @@ class OpenCVFrameProcessor:
 
         # Honesty gate for the UI: never present SAFE, CLEAR or counts unless the
         # whole pipeline produced a usable signal on this frame.
+        #
+        # What is deliberately NOT a failure here: a frame that ran inference and
+        # confirmed zero monitored objects. The models answered, the cabin was
+        # empty, and that is a real measurement — an empty cabin is the state a
+        # good ride is in. It is reported through `detection_count`,
+        # `cabin_object_count` and `cabin_objects` (all zero), never as a missing
+        # signal. Calling it "no result" is what told the UI the pipeline was down
+        # on every frame of an otherwise clean ride.
         fail_reasons = []
-        if yolo_result is None:
+        if yolo_result is None or yolo_error is not None:
+            # Either no object result at all, or YOLO could not run for a real
+            # reason: the model is not loaded, inference raised, or tracking
+            # raised. Only surviving tracks may be reported on such a frame, and
+            # nothing on it was measured.
             fail_reasons.append("backend_down")
-        elif yolo_ran and yolo_result.get("detection_count", 0) == 0:
-            fail_reasons.append("no_result")
-        if not mediapipe_result.get("face_detected"):
+        if not mediapipe_result.get("available", True):
+            # The landmarker could not run. Reporting that as "no face" would
+            # state something about the driver that was never measured.
+            fail_reasons.append("backend_down")
+        elif not mediapipe_result.get("face_detected"):
             fail_reasons.append("no_face")
 
         ai_status = "ok"
@@ -243,7 +281,9 @@ class OpenCVFrameProcessor:
             "frame_height": frame_height,
             "score": score,
             "score_available": score_available,
-            "grade": session_summary["grade"],
+            # None until a frame has actually been scored, matching `session`.
+            # A client must not read a grade here without `score_available`.
+            "grade": (session_summary or {}).get("grade"),
             "active_alerts": active_alerts,
             "timings_ms": timings,
             "yolo": yolo_block,
@@ -253,13 +293,19 @@ class OpenCVFrameProcessor:
 
     @staticmethod
     def _collect(future, label: str):
-        """Wait for one inference. Returns (result, elapsed_ms); errors never propagate."""
+        """
+        Wait for one inference. Returns (result, elapsed_ms, error); errors never propagate.
+
+        The error is returned rather than only logged because the caller has to be
+        able to tell a failed inference from work that was never attempted, and
+        report the first as a dead pipeline instead of an empty frame.
+        """
         if future is None:
-            return None, 0.0
+            return None, 0.0, None
         result, elapsed_ms, error = future.result()
         if error is not None:
             logger.error("[%s] Inference failed: %s", label, error)
-        return result, elapsed_ms
+        return result, elapsed_ms, error
 
     @staticmethod
     def _interpret_face(mediapipe_service, face_points, hand_points, user_id, ride_id, width, height):
@@ -276,7 +322,9 @@ class OpenCVFrameProcessor:
             )
         except Exception as e:
             logger.exception("[MediaPipe] Landmark interpretation failed: %s", e)
-            return mediapipe_service.empty_result([], [])
+            # Unavailable rather than merely face-less: the landmarker was reached
+            # and failed, so nothing about this driver's face was measured.
+            return mediapipe_service.unavailable("landmark_interpretation_failed")
 
     def _commit(self, session, yolo_result, mediapipe_result, yolo_ran):
         """
@@ -310,23 +358,71 @@ class OpenCVFrameProcessor:
         score_available = yolo_ran and mediapipe_result.get("face_detected") is True
         now = time.time()
         if score_available:
-            session.update_events(
-                active_events,
-                now,
-                owned_types=ALL_EVENT_TYPES,
-                measurements=mediapipe_result.get("measurements"),
-            )
-            score = session.apply_score(now)
+            # Events are persisted only through this service, and only while the
+            # user actually has an active ride. Resolved per scored frame so a ride
+            # that has ended stops receiving events instead of keeping them.
+            ride_service = self._ride_service_for(session)
+            try:
+                session.update_events(
+                    active_events,
+                    now,
+                    owned_types=ALL_EVENT_TYPES,
+                    measurements=mediapipe_result.get("measurements"),
+                    ride_service=ride_service,
+                )
+                score = session.apply_score(now)
+            finally:
+                if ride_service is not None:
+                    ride_service.close()
         else:
             score = session.score
         return score, session.get_session_summary(), score_available
+
+    @staticmethod
+    def _ride_service_for(session):
+        """
+        The RideService this session's events must be written through, or None.
+
+        A session only persists an event once it knows which ride the event belongs
+        to, and the frames of a ride arrive without one, so the caller's active ride
+        is resolved here and bound to the session. When the user has no active ride
+        None is returned and the event stays in memory only, exactly as before.
+
+        The lookup is repeated per scored frame rather than cached on the session,
+        so a ride that has since completed is never written to. Measured at ~3 ms
+        per call on SQLite, which is small against the YOLO and MediaPipe inference
+        the same frame has already paid for, and it runs only on scored frames.
+        """
+        from app.services.ride_service import RideService
+
+        service = RideService()
+        try:
+            active_ride = service.get_active_ride_for_user(int(session.user_id))
+        except Exception as e:
+            logger.warning("[Ride] Could not resolve the active ride for persistence: %s", e)
+            service.rollback()
+            service.close()
+            return None
+
+        if active_ride is None:
+            # The ride this session was bound to is gone. Drop the binding so a
+            # stale ride id can never outlive the ride it names.
+            session.ride_id = None
+            service.close()
+            return None
+
+        session.ride_id = active_ride.id
+        return service
 
     def _build_yolo_block(self, yolo_result: dict | None, yolo_error: str | None, score: int, yolo_skipped: bool) -> dict:
         """Build standardized YOLO response block."""
         if yolo_result is not None:
             return {
-                "loaded": True,
-                "error": None,
+                # Tracks survived a frame YOLO could not run. That is still a real
+                # result — but it was not measured here, so it is reported as not
+                # loaded, with the reason, rather than as a fresh clean reading.
+                "loaded": yolo_error is None,
+                "error": yolo_error,
                 "yolo_skipped": yolo_skipped,
                 "detections": yolo_result.get("detections", []),
                 "detection_count": yolo_result.get("detection_count", 0),
@@ -399,3 +495,25 @@ class OpenCVFrameProcessor:
 
 
 opencv_processor = OpenCVFrameProcessor()
+
+
+async def process_base64_frame_async(
+    base64_str: str,
+    user_id: str = "default",
+    ride_id: int = None,
+) -> dict:
+    """Async entry point for the frame pipeline.
+
+    Same arguments, same pipeline, same result dict as
+    ``opencv_processor.process_base64_frame`` -- only the thread it runs on
+    changes, so the event loop stays free to serve /api/video/status and the
+    rest of the API while inference runs.
+    """
+    async with _FRAME_LIMITER:
+        return await run_in_threadpool(
+            opencv_processor.process_base64_frame,
+            base64_str,
+            user_id=user_id,
+            ride_id=ride_id,
+        )
+

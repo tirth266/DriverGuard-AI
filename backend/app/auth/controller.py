@@ -13,6 +13,7 @@ from app.config import get_config
 from app.auth.service import AuthService
 from app.auth.storage import get_user_store
 from app.extensions import JWT_SECRET_KEY, JWT_ALGORITHM
+from app.rate_limit import LOGIN_LIMIT, limiter
 from app.utils.helpers import is_valid_email, sanitize_string
 
 logger = logging.getLogger(__name__)
@@ -144,8 +145,11 @@ class AuthController:
                 status_code=500,
             )
 
+    # `request` is not read here: SlowAPI's decorator inspects the signature for
+    # it and refuses to register a limited endpoint without one.
     @staticmethod
-    async def login(body: LoginBody):
+    @limiter.limit(LOGIN_LIMIT)
+    async def login(request: Request, body: LoginBody):
         """POST /api/auth/login"""
         try:
             email = sanitize_string(body.email)

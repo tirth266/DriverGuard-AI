@@ -14,7 +14,10 @@ MIN_SCORE: float = 0.0
 MAX_SCORE: float = 100.0
 
 # Slow credit recovery while no event is active, so the live score reacts
-# without being noisy.
+# without being noisy. The rate is only half the rule: `score_from_events` also
+# bounds the credit by the duration-billed part of the penalties charged, so an
+# unbounded amount of clean time cannot repurchase a confirmed event. See the
+# docstring there.
 RECOVERY_POINTS: float = 1.0
 RECOVERY_INTERVAL_SECONDS: float = 5.0
 
@@ -67,21 +70,38 @@ def score_from_events(events: Iterable[Dict[str, Any]], clean_seconds: float = 0
     Args:
         events: iterable of event dicts exposing `type` and `duration`.
         clean_seconds: total seconds during which no event was active.
+
+    Every penalty is a confirmation cost (`start`) plus a rate over the event's
+    duration. Only the rate is something clean driving can earn back: the
+    confirmation cost is the record that the event happened, so it stays on the
+    ride. That is what bounds the recovery credit below.
     """
     counts: Dict[str, int] = {}
     seconds: Dict[str, float] = {}
     points: Dict[str, float] = {}
+    # The duration-billed part of every penalty charged here.
+    running_points: float = 0.0
 
     for event in events:
         event_type = event.get("type")
-        if event_type not in PENALTIES:
+        rule = PENALTIES.get(event_type)
+        if rule is None:
             continue
         duration = max(0.0, float(event.get("duration") or 0.0))
+        charged = penalty_for(event_type, duration)
         counts[event_type] = counts.get(event_type, 0) + 1
         seconds[event_type] = seconds.get(event_type, 0.0) + duration
-        points[event_type] = points.get(event_type, 0.0) + penalty_for(event_type, duration)
+        points[event_type] = points.get(event_type, 0.0) + charged
+        running_points += charged - rule["start"]
 
-    recovery = RECOVERY_POINTS * (max(0.0, clean_seconds) / RECOVERY_INTERVAL_SECONDS)
+    earned = RECOVERY_POINTS * (max(0.0, clean_seconds) / RECOVERY_INTERVAL_SECONDS)
+    # Clean time repays penalties, it never mints score. The credit is bounded by
+    # the duration-billed part of what the events cost, so it can neither exceed
+    # the debt nor repay the confirmation that produced it. A ride that recorded
+    # an event therefore keeps that event's start penalty for its whole length and
+    # is never scored back to a clean 100/100; a ride that recorded nothing has no
+    # debt to repay, so its score is unchanged at START_SCORE either way.
+    recovery = min(earned, max(0.0, running_points))
     points_lost = sum(points.values())
     raw = START_SCORE - points_lost + recovery
     score = int(round(max(MIN_SCORE, min(MAX_SCORE, raw))))
@@ -101,6 +121,8 @@ def score_from_events(events: Iterable[Dict[str, Any]], clean_seconds: float = 0
         "score": score,
         "grade": grade_for(score),
         "points_lost": round(points_lost, 1),
+        # The credit actually applied, after the bound above — never the credit
+        # earned, which would report a recovery the score never received.
         "recovery_points": round(recovery, 1),
         "score_breakdown": breakdown,
     }

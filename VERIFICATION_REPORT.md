@@ -130,10 +130,10 @@ RideEvent
 - `GET /api/notifications/status` - Check email config
 
 ### Camera/Monitoring
-- `POST /api/video/process_frame` - Process frame via HTTP
-- `GET /api/video/session/reset` - Reset session
+- `POST /api/video/process_frame` - Process frame via HTTP (authenticated, 2000/min)
+- `POST /api/video/session/reset` - Reset session
 - `GET /api/video/session/summary` - Get session summary
-- `GET /api/video/status` - Get camera/YOLO/MediaPipe status
+- `GET /api/video/status` - Detection readiness flags only (authenticated, 1200/min)
 - `WS /api/video/stream` - WebSocket video stream (auth via query, header, or message)
 
 ---
@@ -197,12 +197,19 @@ Ride Summary (Frontend/PDF)
 ## 6. Authentication
 
 - ✅ Users persist after backend restart (SQLAlchemy + SQLite)
-- ✅ JWT tokens work correctly
+- ✅ JWT tokens work correctly (HS256, 7-day expiry, unchanged)
 - ✅ Google OAuth functional
 - ✅ Protected routes enforce authentication
-- ✅ Workspace selection (Personal/Business) preserved
+- ⚠️ Workspace selection (Personal/Business) is a **client-side** concept only.
+  `users.account_type` is never set by the backend, so the personal/fleet split
+  is a UI preference stored in the browser. Access control is enforced in the
+  database (`Company.owner_id`) and does not depend on it.
 - ✅ Password hashing (bcrypt) preserved
 - ✅ WebSocket auth via query param, header, or first message
+- ✅ `SECRET_KEY` and `JWT_SECRET` have no fallback; the app refuses to start
+  when either is missing or still set to a placeholder (`app/config.require_secret`)
+- ⚠️ Logout is client-side. JWTs are stateless with no revocation list, so a
+  token remains valid for its full 7 days after sign-out.
 
 ---
 
@@ -230,29 +237,34 @@ Ride Summary (Frontend/PDF)
 
 ## 9. Tests
 
-| Test | Result |
-|------|--------|
-| Backend startup | PASS |
-| Database tables created | PASS |
-| User registration | PASS |
-| User login | PASS |
-| Auth persists after restart | PASS |
-| Google OAuth | PASS |
-| Company CRUD | PASS |
-| Driver CRUD | PASS |
-| Vehicle CRUD | PASS |
-| Ride start/end | PASS |
-| Event persistence | PASS |
-| Session summary | PASS |
-| PDF generation | PASS |
-| Frontend build | PASS |
-| Rate limiting | PASS |
-| WebSocket auth | PASS |
-| MediaPipe cleanup | PASS |
-| GPS integration | PARTIAL (browser permission required) |
-| Email service | PARTIAL (requires SMTP config) |
-| YOLO detection | PASS (uses existing model) |
-| MediaPipe landmarks | PASS (uses existing models) |
+Automated suite, run from `backend/`. Everything below marked PASS is covered by
+`python -m pytest tests/ -q`; items marked MANUAL require a running browser or a
+configured external service and are not covered by it.
+
+| Test | Result | Covered by |
+|------|--------|-----------|
+| `python -m pytest tests/ -q` | **PASS** | 319 passed, 4 skipped |
+| `python -m compileall -q app tests` | **PASS** | no output |
+| `npm run build` (frontend) | **PASS** | tsc + vite build |
+| `npx tsc --noEmit` (frontend) | **PASS** | no errors |
+| `npm run lint` (frontend) | **PASS** | 0 errors, 5 pre-existing warnings |
+| Rate limiting enforcement | PASS | `tests/test_rate_limit.py` |
+| Frame pipeline not throttled at 20 FPS | PASS | `tests/test_rate_limit.py` |
+| `/api/video/status` auth + payload | PASS | `tests/test_camera_status.py` |
+| Secret startup guards | PASS | `tests/test_secret_guards.py` |
+| Notification tenant scoping | PASS | `tests/test_notification_scope.py` |
+| Settings reserved-key integrity | PASS | `tests/test_settings_integrity.py` |
+| Ride lifecycle, tenant isolation | PASS | `tests/test_ride_lifecycle.py`, `test_ride_authorization.py`, `test_personal_ride.py`, `test_session_isolation.py` |
+| Scoring | PASS | `tests/test_scoring.py` |
+| JWT expiry / malformed tokens | PASS | `tests/test_auth_expiry.py` |
+| Database tables created | MANUAL | requires app startup |
+| Google OAuth round trip | MANUAL | requires Google credentials |
+| Company / Driver / Vehicle CRUD | MANUAL | requires app startup |
+| PDF report download | PARTIAL | PDF builder covered by unit test; browser download path is MANUAL |
+| GPS capture | MANUAL | browser permission required |
+| Email service | MANUAL | requires SMTP configuration (all endpoints return 503 without it) |
+| YOLO / MediaPipe detection | MANUAL | requires model files |
+| TLS termination | MANUAL | not implemented in-app; see `.env.example` |
 
 ---
 
@@ -268,16 +280,19 @@ Ride Summary (Frontend/PDF)
   - Seat belt detection requirements doc
 
 ### Medium Priority
-- [ ] **Phase 17 Enhancement**: Full settings sync across devices
-- [ ] **Phase 19 Enhancement**: Email templates, notification preferences UI
-- [ ] **Rate Limiting Tuning**: Per-endpoint limits, auth endpoints stricter
+- [x] **Rate Limiting Tuning**: Per-endpoint limits installed; auth endpoints stricter
+- [x] **Unit Tests**: pytest suite for backend services (319 passing)
 - [ ] **Input Validation**: Add Pydantic validators for all endpoints
+- [ ] **TLS termination**: Reverse proxy in front of the server for any real
+      deployment. Not implemented in-app; documented in `backend/.env.example`
+- [ ] **JWT revocation**: logout is client-side only, so a token stays valid for
+      its full 7-day expiry after sign-out
 
 ### Low Priority
-- [ ] **Unit Tests**: Add pytest suite for backend services
 - [ ] **E2E Tests**: Add Playwright/Cypress tests for frontend
 - [ ] **CI/CD**: GitHub Actions for build, test, deploy
-- [ ] **Monitoring**: Add Prometheus metrics, health checks
+- [ ] **Monitoring**: Add Prometheus metrics; `/api/health` exists but is not
+      wired into any UI status indicator
 - [ ] **Documentation**: API docs (OpenAPI/Swagger), architecture docs
 
 ### Not Implemented (Requires Additional Architecture)
@@ -292,21 +307,19 @@ Ride Summary (Frontend/PDF)
 
 ## Summary
 
-**Status**: Core platform is **production-ready** for single-driver monitoring with fleet management capabilities.
+**Status**: The monitoring, scoring and persistence core is sound and covered by
+an automated test suite. It is **not yet production-ready for an untrusted
+network**: TLS termination, JWT revocation and rate-limit storage behind a
+single process are still open, and are listed above rather than glossed over.
 
-**Implemented**: 20 of 22 phases complete (Phases 1-21)
-**Pending**: Phases 15-16 (driver safety UI enhancements) - low priority
+**Implemented**: Full persistence layer (Users, Companies, Drivers, Vehicles,
+Rides, Events, Settings); REST API for fleet management; real-time AI monitoring
+with YOLO11 + MediaPipe; ride scoring with an auditable event timeline; PDF ride
+reports; per-endpoint rate limiting; backend test suite.
 
-**Key Achievements**:
-1. Full persistence layer with SQLAlchemy (Users, Companies, Drivers, Vehicles, Rides, Events, Settings)
-2. Complete REST API for fleet management
-3. Real-time AI monitoring with YOLO11 + MediaPipe
-4. GPS tracking for rides
-5. PDF ride reports
-6. Email notification system
-7. WebSocket video streaming with improved auth
-8. Rate limiting & security hardening
-9. Business Dashboard with real data
-10. Clean, maintainable codebase with no legacy verification scripts
-
-The application successfully transforms from a prototype with in-memory state to a persistent, fleet-capable driver safety platform.
+**Known gaps**: Distance and speed are collected as GPS points but never
+computed into `distance_km` / `average_speed_kmh`, so those PDF fields always
+read "Not Available". Notification endpoints require SMTP configuration and are
+untested end to end without it. Driver/vehicle assignment is offered in the UI
+but not sent by the client. Seat belt detection, forward gaze estimation and
+hands-on-wheel detection are not implemented and are documented as such.

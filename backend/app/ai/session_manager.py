@@ -16,6 +16,11 @@ SCORE_TIMELINE_MAX_SAMPLES = 240
 MAX_CLEAN_CREDIT_STEP_SECONDS = 2.0
 # A confirmed track is only dropped after this many seconds without a match.
 TRACK_CLEAR_SECONDS = 1.5
+# A confirmed track must also have seen one detection at or above its enter
+# threshold inside this window. A long run of weaker matches (a phone read at
+# 28% over a glasses case, say) therefore revives nothing: the track dies at the
+# same TRACK_CLEAR_SECONDS clear, with a hard deadline instead of a soft one.
+TRACK_REVALIDATE_SECONDS = 1.5
 # An unmatched track whose box sits on a detected hand is carried this long,
 # because a hand covering the object is not evidence that it left the cabin.
 TRACK_OCCLUSION_SECONDS = 3.0
@@ -37,6 +42,11 @@ class Track:
     bbox: Dict[str, int]
     confidence: float
     last_matched: float
+    # Confidence of the last matched detection, and the monotonic time of the last
+    # match at or above this track's enter threshold. A run of weaker matches may
+    # keep a track alive but must never be what keeps it confirmed.
+    last_match_conf: float
+    last_strong_match: float
     hits: Deque[bool] = field(default_factory=lambda: deque(maxlen=CONFIRM_WINDOW_YOLO_RUNS))
     confirmed: bool = False
     occluded: bool = False
@@ -86,6 +96,15 @@ class SessionState:
     grade: str = grade_for(START_SCORE)
     lowest_session_score: int = int(START_SCORE)
     clean_seconds: float = 0.0
+    # How many frames this session has actually scored. A session that never
+    # scored one holds START_SCORE only because nothing was ever measured, which
+    # is what separates "no riding happened" from "a clean ride was measured".
+    scored_frames: int = 0
+    # Set once the ride this session belongs to has been ended. From that point
+    # the session is frozen and its summary is the ride's final report, so a
+    # frame that lands late cannot extend or re-score a ride that is already
+    # closed.
+    finalized: bool = False
     score_timeline: Deque[Dict[str, Any]] = field(
         default_factory=lambda: deque(maxlen=SCORE_TIMELINE_MAX_SAMPLES)
     )
@@ -155,6 +174,10 @@ class SessionState:
     ) -> None:
         """Merge continuous confirmed detections and close events on absence."""
         with self._lock:
+            # The ride is over: its report has already been taken, so nothing
+            # arriving now may be added to it or written to its event records.
+            if self.finalized:
+                return
             for event_type, confidence in active_detections.items():
                 measurement = (measurements or {}).get(event_type)
                 event = self.active_events.get(event_type)
@@ -242,6 +265,8 @@ class SessionState:
     def apply_score(self, current_time: float) -> int:
         """Recompute the session score from confirmed events plus clean credit."""
         with self._lock:
+            if self.finalized:
+                return self.score
             if not self.active_events:
                 step = min(MAX_CLEAN_CREDIT_STEP_SECONDS, max(0.0, current_time - self.last_activity_time))
                 self.clean_seconds += step
@@ -254,6 +279,7 @@ class SessionState:
             self.score = result["score"]
             self.grade = result["grade"]
             self.lowest_session_score = min(self.lowest_session_score, self.score)
+            self.scored_frames += 1
 
             if current_time - self.last_timeline_sample >= SCORE_TIMELINE_INTERVAL_SECONDS:
                 self.last_timeline_sample = current_time
@@ -264,17 +290,16 @@ class SessionState:
 
             return self.score
 
-    def get_session_summary(self) -> Dict[str, Any]:
-        """Build the ride summary from confirmed events and the held session score."""
+    def _build_summary(self) -> Dict[str, Any]:
+        """Assemble the summary. The caller holds the lock, so this sees one state."""
         events = self.all_event_dicts()
         events.sort(key=lambda item: item["start_time"], reverse=True)
 
-        with self._lock:
-            score = self.score
-            grade = self.grade
-            lowest_score = int(self.lowest_session_score)
-            clean_seconds = self.clean_seconds
-            timeline = list(self.score_timeline)
+        score = self.score
+        grade = self.grade
+        lowest_score = int(self.lowest_session_score)
+        clean_seconds = self.clean_seconds
+        timeline = list(self.score_timeline)
 
         result = score_from_events(events, clean_seconds)
         total_event_seconds = round(sum(float(event["duration"]) for event in events), 1)
@@ -293,6 +318,41 @@ class SessionState:
             "score_timeline": timeline,
         }
 
+    def get_session_summary(self) -> Optional[Dict[str, Any]]:
+        """
+        The ride summary, or None when no frame has ever been scored.
+
+        Same rule `finalize()` applies, for the same reason: a session that never
+        scored carries START_SCORE only because nothing was measured, so
+        building a summary from it would hand the caller a fabricated, event-free
+        100/100 to present as a clean ride. Returns None so every caller — the
+        live frame, the summary endpoint, the ride report — inherits one rule
+        rather than each re-deciding it.
+        """
+        with self._lock:
+            if self.scored_frames == 0:
+                return None
+            return self._build_summary()
+
+    def finalize(self) -> Optional[Dict[str, Any]]:
+        """
+        Freeze this session and return the report of the ride that just ended.
+
+        Held under the same lock that scores a frame, so the events, score and
+        timeline returned are the ones the ride ended on: a frame still in flight
+        either scored before this and is included, or lands after it and is
+        refused, never half of each.
+
+        Returns None when the session never scored a frame. Such a session carries
+        START_SCORE only because nothing was measured, so reporting it as a clean
+        ride would be a fabricated 100/100; no report is better than a false one.
+        """
+        with self._lock:
+            self.finalized = True
+            if self.scored_frames == 0:
+                return None
+            return self._build_summary()
+
     def reset(self) -> None:
         """Reset all session state."""
         with self._lock:
@@ -304,6 +364,8 @@ class SessionState:
             self.grade = grade_for(START_SCORE)
             self.lowest_session_score = int(START_SCORE)
             self.clean_seconds = 0.0
+            self.scored_frames = 0
+            self.finalized = False
             self.score_timeline.clear()
             self.active_events.clear()
             self.completed_events.clear()
@@ -339,51 +401,59 @@ class SessionManager:
                 session.ride_id = ride_id
             return session
 
-    @staticmethod
-    def _transfer_state(target: SessionState, source: SessionState) -> None:
-        """Move monitoring state between session keys without losing history."""
-        target.session_start_time = source.session_start_time
-        target.last_activity_time = source.last_activity_time
-        target.last_timeline_sample = source.last_timeline_sample
-        target.score = source.score
-        target.grade = source.grade
-        target.lowest_session_score = source.lowest_session_score
-        target.clean_seconds = source.clean_seconds
-        target.score_timeline = source.score_timeline
-        target.active_events = source.active_events
-        target.completed_events = source.completed_events
-        target.tracks = source.tracks
-        target.track_counter = source.track_counter
-        target.last_yolo_monotonic = source.last_yolo_monotonic
-        target.yolo_runs = source.yolo_runs
-        target.signal_state = source.signal_state
+    def find_session(self, user_id: str, ride_id: Optional[int] = None) -> Optional[SessionState]:
+        """
+        The session for a user/ride, or None when there is not one yet.
 
-    def set_ride(self, user_id: str, ride_id: Optional[int]) -> SessionState:
-        """Set/update ride context for a user's session."""
+        Never creates one: reading a ride's final report must not bring a session
+        into existence, because a session that has never scored a frame carries
+        START_SCORE and would read as a perfect, event-free ride.
+        """
+        key = self._session_key(user_id, ride_id)
+        with self._lock:
+            return self._sessions.get(key)
+
+    def finalize_session(self, user_id: str, ride_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        """
+        Freeze a user's session for a ride and return its final report.
+
+        None means there is no measured ride to report on: no session was ever
+        scored for this ride, so no score may be written down for it.
+        """
+        session = self.find_session(user_id, ride_id)
+        if session is None:
+            return None
+        return session.finalize()
+
+    def set_ride(self, user_id: str, ride_id: int) -> SessionState:
+        """
+        Start a ride-scoped session, discarding whatever the last ride left.
+
+        The previous session's score, events, timeline and tracks are dropped, not
+        moved across: a new ride must never inherit them.
+        """
         key_old = self._session_key(user_id, None)
         key_new = self._session_key(user_id, ride_id)
         with self._lock:
-            if key_old in self._sessions and key_old != key_new:
-                old_session = self._sessions.pop(key_old)
-                # Transfer state to new ride context
-                new_session = SessionState(user_id=user_id, ride_id=ride_id)
-                self._transfer_state(new_session, old_session)
-                self._sessions[key_new] = new_session
-                return new_session
-            return self.get_session(user_id, ride_id)
+            if key_old != key_new:
+                self._sessions.pop(key_old, None)
+            session = self.get_session(user_id, ride_id)
+            session.reset()
+            return session
 
     def clear_ride(self, user_id: str) -> Optional[SessionState]:
-        """Clear ride context, return to no-ride session."""
+        """
+        Drop the ride-scoped sessions, keeping the live no-ride session.
+
+        The live session is what the current frames are scored into and what the
+        ride report reads, so it is left alone; the ride-scoped copies are discarded
+        instead of being copied over it.
+        """
         key_old = self._session_key(user_id, None)
-        # Find any ride-specific session
-        ride_keys = [k for k in self._sessions if k.startswith(f"{user_id}:") and k != key_old]
+        prefix = f"{user_id}:"
         with self._lock:
-            for k in ride_keys:
-                session = self._sessions.pop(k)
-                # Transfer back to no-ride session
-                no_ride = self.get_session(user_id, None)
-                self._transfer_state(no_ride, session)
-                return no_ride
+            for key in [k for k in self._sessions if k.startswith(prefix) and k != key_old]:
+                del self._sessions[key]
             return self.get_session(user_id, None)
 
     def remove_session(self, user_id: str, ride_id: Optional[int] = None) -> bool:

@@ -12,8 +12,6 @@ import {
   Settings,
   LogOut,
   UserPlus,
-  Mail,
-  Clock,
   Search,
   ChevronRight,
   X,
@@ -27,22 +25,28 @@ import { driverApi, vehicleApi, type Driver, type Vehicle } from '../../services
 
 /* ─── Types ───────────────────────────────────── */
 
+/**
+ * `status` is whether the driver is enabled in the fleet roster, which is what
+ * `Driver.is_active` actually means. It is not a live connection state: nothing
+ * in the fleet API reports whether a driver is currently streaming, so this view
+ * does not claim one.
+ */
 interface DriverItem {
   id: string
   name: string
   vehicle: string
-  status: 'online' | 'offline' | 'alert'
-  score: number
-  lastAlert?: string
-  tripsToday: number
+  status: 'active' | 'inactive'
 }
 
-interface RecentActivity {
-  time: string
-  type: 'alert' | 'safe' | 'info'
-  text: string
-  color: string
-}
+/**
+ * What this view cannot compute and therefore does not show.
+ *
+ * The fleet API returns driver and vehicle records only. There is no endpoint
+ * for per-driver safety scores, fleet-wide alert history, or trip counts, so
+ * those are reported as unavailable rather than filled with placeholder values.
+ */
+const UNAVAILABLE = '—'
+const UNAVAILABLE_NOTE = 'Not available: the fleet API returns driver and vehicle records only. A driver safety score is written when one of their rides is ended.'
 
 /* ─── Sidebar Nav Items ───────────────────────────────────── */
 
@@ -56,35 +60,18 @@ const SIDEBAR_ITEMS = [
   { label: 'Settings', icon: Settings, path: '/business/settings' },
 ]
 
-const DEFAULT_INVITE_MESSAGE =
-  'Welcome to DriverGuard AI.\nClick the link below to connect your driver credentials.'
+
 
 function mapDriverToItem(driver: Driver, vehicles: Vehicle[]): DriverItem {
   const vehicle = vehicles.find(v => v.id === driver.assigned_vehicle_id)
   const vehicleName = vehicle ? `${vehicle.manufacturer || ''} ${vehicle.model || ''} #${vehicle.vehicle_number}`.trim() : 'Unassigned'
-  
-  // Use is_active for status, default to offline
-  const status = driver.is_active ? 'online' : 'offline'
-  
+
   return {
     id: `DRV-${driver.id.toString().padStart(3, '0')}`,
     name: driver.full_name,
     vehicle: vehicleName,
-    status,
-    score: 95, // Would come from ride history in a real implementation
-    lastAlert: undefined,
-    tripsToday: 0,
+    status: driver.is_active ? 'active' : 'inactive',
   }
-}
-
-function mapRecentActivities(drivers: DriverItem[]): RecentActivity[] {
-  // In a real implementation, this would come from ride events/alerts
-  return drivers.slice(0, 3).map((d, i) => ({
-    time: new Date(Date.now() - i * 15 * 60 * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-    type: 'info' as const,
-    text: `${d.name} ${d.status === 'online' ? 'is active' : 'is offline'}`,
-    color: 'text-brand',
-  }))
 }
 
 export default memo(function BusinessDashboard() {
@@ -106,12 +93,11 @@ export default memo(function BusinessDashboard() {
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteName, setInviteName] = useState('')
   const [invitePhone, setInvitePhone] = useState('')
-  const [inviteMessage, setInviteMessage] = useState(DEFAULT_INVITE_MESSAGE)
   const [isSendingInvite, setIsSendingInvite] = useState(false)
 
   // Driver Table search & filter
   const [searchTerm, setSearchTerm] = useState('')
-  const [filterStatus, setFilterStatus] = useState<'all' | 'online' | 'offline' | 'alert'>('all')
+  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all')
 
   // Load data from API
   const loadFleetData = useCallback(async () => {
@@ -122,8 +108,8 @@ export default memo(function BusinessDashboard() {
         driverApi.list(1, 100),
         vehicleApi.list(1, 100),
       ])
-      if (driversRes.success) setDrivers(driversRes.items)
-      if (vehiclesRes.success) setVehicles(vehiclesRes.items)
+      if (driversRes.success) setDrivers(driversRes.drivers)
+      if (vehiclesRes.success) setVehicles(vehiclesRes.vehicles)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load fleet data')
     } finally {
@@ -150,7 +136,14 @@ export default memo(function BusinessDashboard() {
     navigate('/', { replace: true })
   }
 
-  const handleSendInvite = async (e: React.FormEvent) => {
+  /**
+   * Adds a driver to the fleet roster.
+   *
+   * `driverApi.create` writes the driver record and nothing else: there is no
+   * invitation endpoint, so no email leaves the app and the confirmation says
+   * the record was created rather than that an invitation was sent.
+   */
+  const handleAddDriver = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!inviteEmail || !inviteName) return
     setIsSendingInvite(true)
@@ -160,15 +153,17 @@ export default memo(function BusinessDashboard() {
         email: inviteEmail,
         phone: invitePhone || undefined,
       })
-      toast.success('Driver invited', `Invitation sent to ${inviteEmail}`)
+      toast.success(
+        'Driver added',
+        `${inviteName} was added to your roster. No invitation email is sent — share their sign-in details separately.`,
+      )
       setInviteModalOpen(false)
       setInviteEmail('')
       setInviteName('')
       setInvitePhone('')
-      setInviteMessage(DEFAULT_INVITE_MESSAGE)
       loadFleetData()
     } catch (err) {
-      toast.error('Failed to invite driver', err instanceof Error ? err.message : 'Unknown error')
+      toast.error('Failed to add driver', err instanceof Error ? err.message : 'Unknown error')
     } finally {
       setIsSendingInvite(false)
     }
@@ -176,7 +171,6 @@ export default memo(function BusinessDashboard() {
 
   // Transform API drivers to UI driver items
   const driverItems = drivers.map(d => mapDriverToItem(d, vehicles))
-  const recentActivities = mapRecentActivities(driverItems)
 
   const filteredDrivers = driverItems.filter(d => {
     const matchesSearch =
@@ -187,9 +181,9 @@ export default memo(function BusinessDashboard() {
     return matchesSearch && matchesFilter
   })
 
-  const onlineCount = driverItems.filter(d => d.status === 'online').length
-  const alertCount = driverItems.filter(d => d.status === 'alert').length
-  const offlineCount = driverItems.filter(d => d.status === 'offline').length
+  const activeCount = driverItems.filter(d => d.status === 'active').length
+  const inactiveCount = driverItems.filter(d => d.status === 'inactive').length
+  const unassignedVehicleCount = driverItems.filter(d => d.vehicle === 'Unassigned').length
 
   return (
     <div className="flex w-full h-full overflow-hidden bg-background text-text-primary">
@@ -272,15 +266,8 @@ export default memo(function BusinessDashboard() {
               onClick={() => setInviteModalOpen(true)}
               className="px-3.5 py-2 rounded-[10px] border border-border bg-surface hover:bg-surface-hover text-xs font-medium text-text-primary flex items-center gap-1.5 transition-colors"
             >
-              <Mail size={13} />
-              <span>Invite Driver</span>
-            </button>
-            <button
-              onClick={() => navigate('/business/drivers/add')}
-              className="px-3.5 py-2 rounded-[10px] border border-border bg-surface hover:bg-surface-hover text-xs font-medium text-text-primary flex items-center gap-1.5 transition-colors"
-            >
               <UserPlus size={13} />
-              <span>+ Add Driver</span>
+              <span>Add Driver</span>
             </button>
             <button
               onClick={() => navigate('/business/monitoring')}
@@ -292,83 +279,67 @@ export default memo(function BusinessDashboard() {
           </div>
         </div>
 
-        {/* ── ACTIVE CRITICAL ALERT BANNER (If alert exists) ── */}
-        {alertCount > 0 && (
-          <div className="p-4 rounded-[14px] border border-warning/30 bg-warning/5 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-[8px] bg-warning/15 text-warning flex items-center justify-center flex-shrink-0">
-                <AlertTriangle size={16} />
-              </div>
-              <div>
-                <p className="text-xs font-bold text-text-primary">
-                  1 Active Alert Requires Attention
-                </p>
-                <p className="text-[11px] text-text-secondary">
-                  Marcus Vance (Kenworth T680 #2014) triggered fatigue rest alert 12m ago.
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => navigate('/business/monitoring')}
-              className="px-3 py-1.5 rounded-[8px] bg-warning text-black text-xs font-bold hover:opacity-90 flex-shrink-0"
-            >
-              View Feed
-            </button>
-          </div>
-        )}
-
-        {/* ── STATISTICAL FLEET OVERVIEW ── */}
+        {/* ── FLEET OVERVIEW ──
+            Every figure below is counted from the fleet API responses on load.
+            A fleet-wide safety index, live in-transit count and alert total are
+            not shown because no endpoint returns them: the fleet API lists
+            driver and vehicle records, and the only ride data available is the
+            signed-in user's own rides. */}
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          
-          {/* Dominant Metric: Fleet Safety Index */}
+
+          {/* Drivers on the roster */}
           <div className="p-5 rounded-[16px] bg-surface border border-white/10 space-y-2">
             <div className="flex items-center justify-between text-xs font-mono text-text-muted">
-              <span>FLEET SAFETY INDEX</span>
-              <span className="text-safe text-[11px] font-bold">↑ +2.3%</span>
+              <span>DRIVERS ON ROSTER</span>
+              <Users size={12} className="text-text-muted" />
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="font-display text-3xl font-extrabold text-text-primary">91.4%</span>
+              <span className="font-display text-3xl font-extrabold text-text-primary">{driverItems.length}</span>
             </div>
-            <p className="text-[11px] text-text-secondary">Across {driverItems.length} registered vehicles</p>
+            <p className="text-[11px] text-text-secondary">From GET /api/fleet/drivers</p>
           </div>
 
-          {/* Active Drivers */}
+          {/* Enabled drivers */}
           <div className="p-5 rounded-[16px] bg-surface border border-white/10 space-y-2">
             <div className="flex items-center justify-between text-xs font-mono text-text-muted">
-              <span>ACTIVE IN TRANSIT</span>
+              <span>ENABLED</span>
               <span className="w-2 h-2 rounded-full bg-safe" />
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="font-display text-3xl font-extrabold text-safe">{onlineCount}</span>
-              <span className="text-xs text-text-muted">/ {driverItems.length} total</span>
+              <span className="font-display text-3xl font-extrabold text-safe">{activeCount}</span>
+              <span className="text-xs text-text-muted">/ {driverItems.length}</span>
             </div>
-            <p className="text-[11px] text-text-secondary">Live telemetry streaming</p>
+            <p className="text-[11px] text-text-secondary">
+              Driver.is_active · {inactiveCount} disabled
+            </p>
           </div>
 
-          {/* Critical Alerts */}
+          {/* Vehicles */}
           <div className="p-5 rounded-[16px] bg-surface border border-white/10 space-y-2">
             <div className="flex items-center justify-between text-xs font-mono text-text-muted">
-              <span>FLAGGED INTERVENTIONS</span>
-              <span className="text-warning text-xs font-bold">{alertCount}</span>
+              <span>VEHICLES</span>
+              <Radio size={12} className="text-text-muted" />
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="font-display text-3xl font-extrabold text-warning">{alertCount}</span>
-              <span className="text-xs text-text-muted">requiring action</span>
+              <span className="font-display text-3xl font-extrabold text-text-primary">{vehicles.length}</span>
+              <span className="text-xs text-text-muted">registered</span>
             </div>
-            <p className="text-[11px] text-text-secondary">Zero high-speed incidents</p>
+            <p className="text-[11px] text-text-secondary">From GET /api/fleet/vehicles</p>
           </div>
 
-          {/* Standby / Off-Duty */}
+          {/* Fleet-wide safety score: not computable from this API */}
           <div className="p-5 rounded-[16px] bg-surface border border-white/10 space-y-2">
             <div className="flex items-center justify-between text-xs font-mono text-text-muted">
-              <span>OFF-DUTY STANDBY</span>
-              <Clock size={12} className="text-text-muted" />
+              <span>FLEET SAFETY SCORE</span>
+              <span className="text-text-muted text-[11px] font-bold">N/A</span>
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="font-display text-3xl font-extrabold text-text-primary">{offlineCount}</span>
-              <span className="text-xs text-text-muted">drivers</span>
+              <span className="font-display text-3xl font-extrabold text-text-muted">{UNAVAILABLE}</span>
             </div>
-            <p className="text-[11px] text-text-secondary">Scheduled for next rotation</p>
+            <p className="text-[11px] text-text-secondary" title={UNAVAILABLE_NOTE}>
+              No fleet-wide score endpoint
+              {unassignedVehicleCount > 0 ? ` · ${unassignedVehicleCount} driver(s) without a vehicle` : ''}
+            </p>
           </div>
 
         </section>
@@ -385,13 +356,13 @@ export default memo(function BusinessDashboard() {
                   Driver Roster
                 </h2>
                 <p className="text-xs text-text-secondary">
-                  Real-time driver compliance scores and vehicle assignments.
+                  Driver records and vehicle assignments from your fleet.
                 </p>
               </div>
 
-              {/* Status Filters */}
+              {/* Roster filters: enabled vs disabled, which is what the API reports */}
               <div className="flex items-center gap-1 bg-card p-1 rounded-[8px] border border-border text-xs">
-                {(['all', 'online', 'alert', 'offline'] as const).map(st => (
+                {(['all', 'active', 'inactive'] as const).map(st => (
                   <button
                     key={st}
                     onClick={() => setFilterStatus(st)}
@@ -444,7 +415,7 @@ export default memo(function BusinessDashboard() {
                     <tr className="border-b border-border text-text-muted uppercase tracking-wider text-[10px] font-mono">
                       <th className="pb-2.5 px-3">Driver</th>
                       <th className="pb-2.5 px-3">Vehicle</th>
-                      <th className="pb-2.5 px-3">Status</th>
+                      <th className="pb-2.5 px-3">Roster Status</th>
                       <th className="pb-2.5 px-3">Safety Score</th>
                       <th className="pb-2.5 px-3 text-right">Console</th>
                     </tr>
@@ -474,27 +445,21 @@ export default memo(function BusinessDashboard() {
                         </td>
 
                         <td className="py-3 px-3">
-                          {driver.status === 'online' && (
+                          {driver.status === 'active' && (
                             <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-safe/10 text-safe font-mono font-bold text-[10px] border border-safe/25">
-                              <span className="w-1.5 h-1.5 rounded-full bg-safe" /> ONLINE
+                              <span className="w-1.5 h-1.5 rounded-full bg-safe" /> ENABLED
                             </span>
                           )}
-                          {driver.status === 'alert' && (
-                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-warning/10 text-warning font-mono font-bold text-[10px] border border-warning/30">
-                              <AlertTriangle size={11} /> ATTENTION
-                            </span>
-                          )}
-                          {driver.status === 'offline' && (
+                          {driver.status === 'inactive' && (
                             <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-card text-text-muted font-mono text-[10px] border border-border">
-                              OFF-DUTY
+                              DISABLED
                             </span>
                           )}
                         </td>
 
-                        <td className="py-3 px-3 font-mono font-bold">
-                          <span className={driver.score >= 90 ? 'text-safe' : driver.score >= 80 ? 'text-warning' : 'text-danger'}>
-                            {driver.score}%
-                          </span>
+                        {/* Not a real score: the fleet API returns no scores. */}
+                        <td className="py-3 px-3 font-mono font-bold" title={UNAVAILABLE_NOTE}>
+                          <span className="text-text-muted">{UNAVAILABLE}</span>
                         </td>
 
                         <td className="py-3 px-3 text-right">
@@ -511,38 +476,38 @@ export default memo(function BusinessDashboard() {
 
           </div>
 
-          {/* Right 4 Cols: Live Alert Feed */}
+          {/* Right 4 Cols: Fleet Alerts — unavailable, and says so.
+
+              Live Monitoring reports one cabin at a time on the signed-in
+              browser's camera. There is no endpoint that aggregates events
+              across a fleet, so nothing is listed here rather than a fabricated
+              feed being generated from the roster. */}
           <div className="lg:col-span-4 p-6 rounded-[18px] bg-surface border border-white/10 space-y-4">
             <div>
               <h2 className="font-display text-base font-bold text-text-primary">
-                Live Alert Feed
+                Fleet Alerts
               </h2>
               <p className="text-xs text-text-secondary">
-                Real-time edge detections from in-cabin cameras.
+                Detection events from monitored rides.
               </p>
             </div>
 
-            <div className="space-y-2.5">
-              {recentActivities.length === 0 ? (
-                <div className="p-3 text-center text-xs text-text-secondary">
-                  No recent activity
-                </div>
-              ) : recentActivities.map((act, i) => (
-                <div
-                  key={i}
-                  className="p-3 rounded-[10px] bg-card border border-border/80 space-y-1 hover:border-white/20 transition-colors"
-                >
-                  <div className="flex items-center justify-between text-[10px] font-mono">
-                    <span className="text-text-muted">{act.time}</span>
-                    <span className={`font-bold uppercase tracking-wider ${act.color}`}>
-                      {act.type}
-                    </span>
-                  </div>
-                  <p className="text-xs text-text-primary leading-snug font-medium">
-                    {act.text}
-                  </p>
-                </div>
-              ))}
+            <div className="p-4 rounded-[10px] bg-card border border-border/80 space-y-2">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={14} className="text-text-muted flex-shrink-0" />
+                <span className="text-xs font-bold text-text-primary">Not available</span>
+              </div>
+              <p className="text-[11px] text-text-secondary leading-relaxed">
+                Events are recorded against a single ride and read back on that ride's
+                report. There is no fleet-wide event feed, so no alert list is shown here.
+                Open Live Monitoring to analyse a cabin now.
+              </p>
+              <button
+                onClick={() => navigate('/business/monitoring')}
+                className="text-[11px] font-semibold text-brand hover:underline"
+              >
+                Open Live Monitoring
+              </button>
             </div>
           </div>
 
@@ -569,8 +534,10 @@ export default memo(function BusinessDashboard() {
             >
               <div className="flex items-center justify-between border-b border-border pb-3">
                 <div>
-                  <h3 className="font-display font-bold text-base text-text-primary">Invite Fleet Driver</h3>
-                  <p className="text-xs text-text-secondary">Send an activation link to onboard driver telemetry.</p>
+                  <h3 className="font-display font-bold text-base text-text-primary">Add Fleet Driver</h3>
+                  <p className="text-xs text-text-secondary">
+                    Creates a driver record on your roster. No invitation email is sent.
+                  </p>
                 </div>
                 <button
                   onClick={() => setInviteModalOpen(false)}
@@ -580,7 +547,7 @@ export default memo(function BusinessDashboard() {
                 </button>
               </div>
 
-              <form onSubmit={handleSendInvite} className="space-y-4">
+              <form onSubmit={handleAddDriver} className="space-y-4">
                 <div>
                   <label className="block text-[11px] font-mono uppercase tracking-wider text-text-muted mb-1">
                     Driver Email *
@@ -622,18 +589,6 @@ export default memo(function BusinessDashboard() {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-mono uppercase tracking-wider text-text-muted mb-1">
-                    Custom Note (Optional)
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={inviteMessage}
-                    onChange={e => setInviteMessage(e.target.value)}
-                    className="w-full px-3 py-2 rounded-[8px] border border-border bg-card text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand resize-none"
-                  />
-                </div>
-
                 <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-border">
                   <button
                     type="button"
@@ -647,7 +602,7 @@ export default memo(function BusinessDashboard() {
                     disabled={isSendingInvite}
                     className="px-4 py-2 rounded-[8px] bg-brand text-white text-xs font-bold hover:bg-brand/90 flex items-center gap-1.5 disabled:opacity-50"
                   >
-                    {isSendingInvite ? 'Sending...' : 'Send Invitation'}
+                    {isSendingInvite ? 'Adding...' : 'Add Driver'}
                   </button>
                 </div>
               </form>

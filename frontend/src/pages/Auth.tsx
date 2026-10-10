@@ -182,7 +182,9 @@ export default function AuthPage({ defaultMode = 'signin' }: { defaultMode?: 'si
     }
   }
 
-  // Handle Forgot Password Submit
+  // Handle Forgot Password Submit.
+  // The panel stays open on failure: closing it after a reset that could not
+  // happen would leave the user believing a link was sent.
   const handleForgotSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!forgotEmail.trim() || !/\S+@\S+\.\S+/.test(forgotEmail)) {
@@ -190,10 +192,12 @@ export default function AuthPage({ defaultMode = 'signin' }: { defaultMode?: 'si
       return
     }
     setForgotLoading(true)
-    await forgotPassword(forgotEmail)
+    const sent = await forgotPassword(forgotEmail)
     setForgotLoading(false)
-    setShowForgotPassword(false)
-    setForgotEmail('')
+    if (sent) {
+      setShowForgotPassword(false)
+      setForgotEmail('')
+    }
   }
 
   return (
@@ -659,7 +663,7 @@ export default function AuthPage({ defaultMode = 'signin' }: { defaultMode?: 'si
 
       {/* Footer */}
       <footer className="w-full text-center py-4 text-xs text-on-surface-variant border-t border-border/50 z-20">
-        © {new Date().getFullYear()} DriverGuard AI. All rights reserved. Encrypted 256-bit Enterprise Protection.
+        © {new Date().getFullYear()} DriverGuard AI. Passwords are hashed with bcrypt. Serve over HTTPS.
       </footer>
 
       {/* FORGOT PASSWORD MODAL */}
@@ -687,7 +691,10 @@ export default function AuthPage({ defaultMode = 'signin' }: { defaultMode?: 'si
                   </div>
                   <div>
                     <h3 className="text-lg font-extrabold text-on-surface">Reset Password</h3>
-                    <p className="text-xs text-on-surface-variant">We'll send you instructions via email.</p>
+                    <p className="text-xs text-on-surface-variant">
+                      Password reset is not available: this deployment has no reset endpoint, so no
+                      email can be sent. Sign in with Google, or ask an administrator to reset it.
+                    </p>
                   </div>
                 </div>
                 <button
@@ -739,7 +746,7 @@ export default function AuthPage({ defaultMode = 'signin' }: { defaultMode?: 'si
                     className="flex-1"
                     disabled={forgotLoading}
                   >
-                    {forgotLoading ? 'Sending…' : 'Send Reset Link'}
+                    {forgotLoading ? 'Checking…' : 'Send Reset Link'}
                   </Button>
                 </div>
               </form>

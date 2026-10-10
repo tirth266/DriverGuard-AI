@@ -43,23 +43,32 @@ interface VehicleFormState {
   status: 'Active' | 'Maintenance' | 'Inactive'
 }
 
+/**
+ * A new vehicle, not an example one.
+ *
+ * This form submits to the database, so every field must start empty. It used
+ * to be prefilled with a plausible-looking vehicle, VIN and insurance policy,
+ * which meant a user who opened the page and pressed Save wrote a fabricated
+ * vehicle — including someone else's insurer's policy number — into their fleet.
+ * Suggestions belong in the placeholder text, where they cannot be saved.
+ */
 const INITIAL_FORM: VehicleFormState = {
-  vehicleNumber: 'FLEET-4082',
-  registrationNumber: 'KA-01-MJ-9921',
+  vehicleNumber: '',
+  registrationNumber: '',
   vehicleType: 'Truck',
 
-  manufacturer: 'Freightliner',
-  model: 'Cascadia 126',
-  year: '2024',
-  color: 'Midnight Blue',
-  vinNumber: '1FUJGLDR8RHK18293',
+  manufacturer: '',
+  model: '',
+  year: '',
+  color: '',
+  vinNumber: '',
 
-  assignedDriver: 'John Driver',
-  department: 'Logistics & Intermodal',
+  assignedDriver: '',
+  department: '',
 
-  insuranceCompany: 'HDFC ERGO Commercial Line',
-  policyNumber: 'POL-992182-COMM',
-  insuranceExpiry: '2026-12-31',
+  insuranceCompany: '',
+  policyNumber: '',
+  insuranceExpiry: '',
 
   status: 'Active',
 }
@@ -81,7 +90,7 @@ const AddVehiclePage = memo(function AddVehiclePage() {
 
   useEffect(() => {
     driverApi.list(1, 100).then(res => {
-      if (res.success) setDrivers(res.items)
+      if (res.success) setDrivers(res.drivers)
       setLoadingDrivers(false)
     }).catch(() => setLoadingDrivers(false))
   }, [])

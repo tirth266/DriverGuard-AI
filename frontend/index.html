@@ -11,7 +11,11 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Geist:wght@400;600;700&display=swap" rel="stylesheet" />
     <script>
       (function() {
-        var stored = localStorage.getItem('driverguard-theme');
+        // Must match THEME_KEY in src/context/ThemeContext.tsx. It used to be
+        // 'driverguard-theme', a key nothing ever wrote, so this anti-flash
+        // script always fell through to prefers-color-scheme and every load
+        // flashed the opposite theme for users who had chosen one.
+        var stored = localStorage.getItem('driverguard_theme_preference');
         var theme = stored;
         if (!theme) {
           theme = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';

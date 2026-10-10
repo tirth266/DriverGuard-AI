@@ -23,7 +23,7 @@ class MediaPipeDriverService:
 
     # â”€â”€ Tunable thresholds â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Eye aspect ratio below this counts as a closed eye.
-    EYE_CLOSED_EAR = 0.20
+    EYE_CLOSED_EAR = 0.25
     # Seconds of continuous eye closure before eyes_closed is raised.
     EYES_CLOSED_SECONDS = 0.7
     # Seconds of continuous eye closure before the drowsy escalation.
@@ -73,7 +73,7 @@ class MediaPipeDriverService:
     LEFT_CHEEK = 234
     RIGHT_CHEEK = 454
 
-    def __init__(self, face_model_path: Optional[str] = None, hand_model_path: Optional[str] = None):
+    def __init__(self, face_model_path: Optional[str] = None, hand_model_path: Optional[str] = None, load_tasks: bool = True):
         # Allow re-initialization when called from app startup with explicit paths
         raw_face = face_model_path or os.getenv("MEDIAPIPE_FACE_MODEL_PATH", "")
         raw_hand = hand_model_path or os.getenv("MEDIAPIPE_HAND_MODEL_PATH", "")
@@ -102,10 +102,11 @@ class MediaPipeDriverService:
         # Module-level singletons shared by every session, so landmark detection is
         # guarded and no tracking state leaks between users.
         self._detect_lock = threading.Lock()
-        self._load_tasks()
+        if load_tasks:
+            self._load_tasks()
 
     def _load_tasks(self) -> None:
-        """Load Tasks models only when explicitly configured and present."""
+        """Load Tasks models only when explicitly configured and present on disk."""
         try:
             from mediapipe.tasks.python import BaseOptions
             from mediapipe.tasks.python.vision import (
@@ -116,10 +117,15 @@ class MediaPipeDriverService:
                 RunningMode,
             )
 
-            if self.face_model_path and Path(self.face_model_path).is_file():
+            # Local files only: MediaPipe never fetches a .task bundle, and a
+            # missing one is reported rather than downloaded.
+            face_file = self._local_model_file(self.face_model_path, "face_landmarker.task")
+            hand_file = self._local_model_file(self.hand_model_path, "hand_landmarker.task")
+
+            if face_file is not None:
                 self.face_landmarker = FaceLandmarker.create_from_options(
                     FaceLandmarkerOptions(
-                        base_options=BaseOptions(model_asset_path=self.face_model_path),
+                        base_options=BaseOptions(model_asset_path=str(face_file)),
                         running_mode=RunningMode.IMAGE,
                         num_faces=1,
                         # Neither output is used, so both stay off.
@@ -128,30 +134,33 @@ class MediaPipeDriverService:
                     )
                 )
                 self.face_available = True
-            else:
-                logger.warning(
-                    "[MediaPipe] face_landmarker.task not found at: %s", self.face_model_path
-                )
 
-            if self.hand_model_path and Path(self.hand_model_path).is_file():
+            if hand_file is not None:
                 self.hand_landmarker = HandLandmarker.create_from_options(
                     HandLandmarkerOptions(
-                        base_options=BaseOptions(model_asset_path=self.hand_model_path),
+                        base_options=BaseOptions(model_asset_path=str(hand_file)),
                         running_mode=RunningMode.IMAGE,
                         num_hands=2,
                     )
                 )
                 self.hands_available = True
-            else:
-                logger.warning(
-                    "[MediaPipe] hand_landmarker.task not found at: %s", self.hand_model_path
-                )
         except Exception as error:
             logger.warning("MediaPipe Tasks unavailable: %s", error)
             self.face_landmarker = None
             self.hand_landmarker = None
             self.face_available = False
             self.hands_available = False
+
+    @staticmethod
+    def _local_model_file(path: Optional[str], label: str):
+        """The model file when it exists and is non-empty, else None plus one log line."""
+        if path and Path(path).is_file() and Path(path).stat().st_size > 0:
+            return Path(path)
+        logger.error(
+            "[MediaPipe] Missing local model file: %s — run: python scripts/setup_models.py",
+            path or label,
+        )
+        return None
 
     @staticmethod
     def _distance(first: Point, second: Point) -> float:
@@ -590,7 +599,9 @@ class MediaPipeDriverService:
 
     def warmup(self) -> None:
         """Run one throwaway inference so the first real frame is not the slowest."""
-        dummy = np.zeros((self.MEDIAPIPE_MAX_WIDTH, self.MEDIAPIPE_MAX_WIDTH, 3), dtype=np.uint8)
+        # Same inference width a live frame arrives at, so the first analysed frame
+        # does not pay a resize/graph init the warm-up never exercised.
+        dummy = np.zeros((self.MEDIAPIPE_MAX_WIDTH // 2, self.MEDIAPIPE_MAX_WIDTH, 3), dtype=np.uint8)
         try:
             self.detect_landmarks(dummy)
         except Exception as e:
@@ -685,5 +696,8 @@ class MediaPipeDriverService:
         logger.info("MediaPipe resources cleaned up")
 
 
-mediapipe_service = MediaPipeDriverService()
+# The singleton is built WITHOUT loading the Tasks models: importing this module
+# must stay cheap, because the app imports it on the request path. The startup
+# warm-up thread performs the one and only landmarker load (see app.load_models).
+mediapipe_service = MediaPipeDriverService(load_tasks=False)
 

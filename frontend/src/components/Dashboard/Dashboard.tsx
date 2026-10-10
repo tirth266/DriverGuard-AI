@@ -1,4 +1,4 @@
-import { memo, useState, useCallback } from 'react'
+import { memo, useState, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -24,7 +24,12 @@ import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import WebcamFeed, { useScoreDisplay } from '../../components/dashboard/WebcamFeed'
 import type { CabinCategory, Telemetry } from '../../components/dashboard/WebcamFeed'
-import { fetchWithAuth, buildApiUrl } from '../../services/fleetApi'
+import {
+  buildApiUrl,
+  fetchWithAuth,
+  rideApi,
+} from '../../services/fleetApi'
+import { startMonitoringRide } from '../../services/monitoringRide'
 
 /* ─── Alert metadata ─────────────────────────────────── */
 
@@ -79,12 +84,12 @@ const AI_STATUS_COPY: Record<string, string> = {
   warming_up: 'Starting AI engine — no frame has been analysed yet.',
   backend_down: 'Detection service unreachable — the score is held, not verified.',
   no_face: 'No face detected — eyes, head pose and mouth cannot be assessed.',
-  no_result: 'The model returned no cabin objects for this frame.',
 }
 
 const INITIAL_TELEMETRY: Partial<Telemetry> = {
   score: 0,
   scoreAvailable: false,
+  sessionReset: false,
   grade: '',
   aiStatus: 'warming_up',
   failReasons: [],
@@ -202,21 +207,69 @@ function SignalRow({
 
 export default memo(function Dashboard() {
   const [cameraFull, setCameraFull] = useState(false)
-  const [isRecording, setIsRecording] = useState(true)
   const [showEndRideModal, setShowEndRideModal] = useState(false)
 
-  // Real-time telemetry state updated by the live YOLO11 / MediaPipe camera feed
-  const [telemetry, setTelemetry] = useState<Partial<Telemetry>>(INITIAL_TELEMETRY)
+  // End Ride is a sequence, not a click: the feed is stopped, the ride is
+  // finalized on the server and only then does the report open. These hold the
+  // ride across that sequence and keep it to a single run.
+  const [endingRide, setEndingRide] = useState(false)
+  // The camera feed, unmounted while the ride is being finalized so its frame loop
+  // cannot keep scoring into a ride that is being closed.
+  const [feedMounted, setFeedMounted] = useState(true)
+
+  // The ride this monitoring session is driving. Monitoring begins when this view
+  // mounts, so the ride begins here too: every frame is sent with this id, and the
+  // same id is the one End Ride closes. Without it there is no ride to report on,
+  // so End Ride refuses rather than inventing a report.
+  const [rideId, setRideId] = useState<number | null>(null)
+  // Why no ride could be opened, when one could not. End Ride says this back
+  // instead of a bare refusal, so a fleet with no driver or no vehicle reads as
+  // the setup problem it is rather than a broken session.
+  const [rideStartError, setRideStartError] = useState<string | null>(null)
 
   const { user } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
 
+  useEffect(() => {
+    let cancelled = false
+
+    const openRide = async () => {
+      const userId = Number(user?.id)
+      if (!userId) return
+      try {
+        const id = await startMonitoringRide(userId)
+        if (!cancelled) {
+          setRideId(id)
+          setRideStartError(null)
+        }
+      } catch (error) {
+        // Monitoring itself still works without a ride, so the session is not torn
+        // down; the reason is kept so End Ride can report it instead of only
+        // noticing that there is no ride to end.
+        if (cancelled) return
+        setRideId(null)
+        setRideStartError(
+          error instanceof Error
+            ? error.message
+            : 'The ride for this session could not be started, so there is no ride to report on.',
+        )
+      }
+    }
+
+    void openRide()
+    return () => { cancelled = true }
+  }, [user?.id])
+
+  // Real-time telemetry state updated by the live YOLO11 / MediaPipe camera feed
+  const [telemetry, setTelemetry] = useState<Partial<Telemetry>>(INITIAL_TELEMETRY)
+
   const handleTelemetryUpdate = useCallback((newTelemetry: Partial<Telemetry>) => {
     setTelemetry(prev => ({ ...prev, ...newTelemetry }))
   }, [])
 
-  const handleSnapshot = () => toast.success('Snapshot Saved', 'Live webcam frame saved to incident log.')
+  // Whether the camera is actually producing frames, read from the feed.
+  const cameraActive = telemetry.cameraState === 'active'
 
   const aiStatus = telemetry.aiStatus || 'warming_up'
   const hasSignal = aiStatus === 'ok'
@@ -230,27 +283,82 @@ export default memo(function Dashboard() {
   const topPenalties = breakdown.slice(0, 2)
   const recentEvents = (telemetry.sessionSummary?.events || []).slice(0, 5)
 
-  // One source of truth for the live state chip: SAFE and DISTRACTED can never show together.
+  // One source of truth for the live state chip: the chip, the grade, the number
+  // and the HELD badge all read scoreDisplay, so the header can never say FOCUSED
+  // over a drained card. Nothing is assessed until this ride has a score.
+  const drained = scoreDisplay.grade === 'Poor' || scoreDisplay.grade === 'Critical'
   const stateChip = !hasSignal
     ? aiStatus === 'warming_up'
       ? { label: 'STARTING', className: 'bg-text-muted/10 text-text-muted border-text-muted/30' }
       : { label: 'NO AI SIGNAL', className: 'bg-text-muted/10 text-text-muted border-text-muted/30' }
-    : telemetry.isDistracted
+    : scoreDisplay.score === null
+    ? { label: 'STARTING', className: 'bg-text-muted/10 text-text-muted border-text-muted/30' }
+    : telemetry.isDistracted || drained
     ? { label: 'DISTRACTED', className: 'bg-danger/10 text-danger border-danger/30' }
     : { label: 'FOCUSED', className: 'bg-safe/10 text-safe border-safe/30' }
 
   // End Ride Action
   const handleConfirmEndRide = async () => {
+    // One finalize at a time. A second End Ride while the first is still talking
+    // to the server would race it for the same ride's report.
+    if (endingRide) return
+    const endingRideId = rideId
+    if (endingRideId === null) {
+      // Nothing was ever recorded against a ride, so there is no ride to report
+      // on. Reading the live session here is what produced a fake clean 100/100:
+      // that session belongs to no ride, so its score describes no ride at all.
+      // When the ride could not be opened because a driver or vehicle was
+      // missing, that reason is given instead: it is what the user has to fix.
+      toast.error(
+        'Ride Not Started',
+        rideStartError ?? 'No ride was recorded for this session, so there is no ride to report. Reload and start monitoring again.',
+      )
+      return
+    }
+
+    setEndingRide(true)
     setShowEndRideModal(false)
+
     const isBiz = user?.role === 'business' || user?.accountType === 'business'
     const targetSummary = isBiz ? '/business/ride-summary' : '/personal/ride-summary'
-    let sessionSummary: unknown
+
+    // Stop the feed before anything else. Unmounting it stops the camera and the
+    // frame loop, so no further frame is analysed into this ride while it is being
+    // closed: a frame landing in that window could be scored after the report was
+    // taken and then be silently missing from it.
+    setFeedMounted(false)
+
     try {
-      sessionSummary = await fetchWithAuth(buildApiUrl('/api/video/session/summary'))
+      // Close the ride and finalize it. The server closes the events still open,
+      // freezes this ride's session and stores its final score, grade, breakdown
+      // and timeline on the ride itself, so the report outlives the session and a
+      // reload reads back exactly this score.
+      const { session_summary: finalSessionSummary } = await rideApi.end(endingRideId)
+      setRideId(null)
+
+      // The ride is over, so its live session is discarded. Awaited, because that
+      // reset is what clears the score the next ride must not inherit, and it must
+      // not still be in flight once the report is on screen.
+      await fetchWithAuth(buildApiUrl('/api/video/session/reset'), { method: 'POST' }).catch(() => undefined)
+
+      toast.success('Ride Ended Successfully', 'Redirecting to AI driving report...')
+
+      // The ride id travels in the URL, not only in router state: router state is
+      // dropped by a reload and by a pasted link, and the report has to survive
+      // both. The payload rides along as the fallback for the rare ride that
+      // could not be persisted.
+      navigate(`${targetSummary}?ride=${endingRideId}`, {
+        state: { sessionSummary: finalSessionSummary ?? undefined },
+      })
     } catch {
-      // The report can still open if the authoritative session read is unavailable.
+      // The ride was not closed, so it is not a completed ride and there is no
+      // report to show. Stay here and let it be retried, rather than navigating to
+      // a summary that would read as a finished ride with no score.
+      setEndingRide(false)
+      setFeedMounted(true)
+      setShowEndRideModal(true)
+      toast.error('Ride Not Closed', 'The ride could not be closed on the server, so there is no report to show. Try ending the ride again.')
     }
-    navigate(targetSummary, { state: { sessionSummary } })
   }
 
   const formatEventTime = (timestamp: number) =>
@@ -330,36 +438,37 @@ export default memo(function Dashboard() {
         <div className="flex-1 flex flex-col gap-3 min-w-0">
           <div className="bg-surface border border-white/10 rounded-[18px] overflow-hidden shadow-xl flex flex-col h-full">
 
-            {/* Camera toolbar: REC | Snapshot | Expand | End Ride */}
+            {/* Camera toolbar: camera state | REC | Snapshot | Expand | End Ride
+
+                REC and Snapshot are disabled rather than wired to a stub. The frame
+                loop runs for the whole ride regardless of the toggle, and no frame is
+                ever written to disk, so an enabled control here would report an action
+                the app does not perform. The badge reads the feed's real camera state. */}
             <div className="px-4 py-2.5 bg-surface-hover border-b border-border flex items-center justify-between gap-3 flex-wrap">
               <div className="flex items-center gap-2.5">
                 <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-[4px] bg-safe/10 text-safe font-mono font-bold text-[10px] border border-safe/25">
-                  <span className="w-1.5 h-1.5 rounded-full bg-safe animate-pulse" /> LIVE
-                </span>
-                <span className="text-[11px] font-mono text-text-muted hidden sm:inline">
-                  CABIN CAM-01 · 1080P
+                  <span className={`w-1.5 h-1.5 rounded-full ${cameraActive ? 'bg-safe animate-pulse' : 'bg-warning'}`} />
+                  CAMERA {cameraActive ? 'LIVE' : (telemetry.cameraState ?? 'starting').replace('_', ' ').toUpperCase()}
                 </span>
               </div>
 
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setIsRecording(r => !r)}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] border text-xs font-mono font-medium transition-colors ${
-                    isRecording
-                      ? 'bg-danger/10 text-danger border-danger/30'
-                      : 'bg-card text-text-muted border-border'
-                  }`}
+                  disabled
+                  title="Not available: the frame loop runs for the whole ride, so pausing capture is not implemented."
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] border border-border text-xs font-mono font-medium bg-card text-text-muted cursor-not-allowed opacity-60"
                 >
-                  <span className={`w-1.5 h-1.5 rounded-full ${isRecording ? 'bg-danger animate-pulse' : 'bg-text-muted'}`} />
-                  {isRecording ? 'REC' : 'PAUSED'}
+                  <span className="w-1.5 h-1.5 rounded-full bg-text-muted" />
+                  REC N/A
                 </button>
 
                 <button
-                  onClick={handleSnapshot}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-[6px] bg-card hover:bg-surface border border-border text-text-secondary hover:text-text-primary text-xs font-medium transition-colors"
+                  disabled
+                  title="Not available: frames are analysed in memory and are not saved as images."
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-[6px] bg-card border border-border text-text-muted text-xs font-medium cursor-not-allowed opacity-60"
                 >
                   <Camera size={13} />
-                  <span className="hidden sm:inline">Snapshot</span>
+                  <span className="hidden sm:inline">Snapshot N/A</span>
                 </button>
 
                 <button
@@ -372,7 +481,8 @@ export default memo(function Dashboard() {
 
                 <button
                   onClick={() => setShowEndRideModal(true)}
-                  className="bg-danger hover:bg-danger/90 text-white rounded-[6px] px-3 py-1 flex items-center gap-1 text-xs font-semibold shadow-xs transition-colors"
+                  disabled={endingRide}
+                  className="bg-danger hover:bg-danger/90 text-white rounded-[6px] px-3 py-1 flex items-center gap-1 text-xs font-semibold shadow-xs transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                   title="End current ride session"
                 >
                   <StopCircle size={13} />
@@ -381,23 +491,49 @@ export default memo(function Dashboard() {
               </div>
             </div>
 
-            <WebcamFeed
-              isRecording={isRecording}
-              onTelemetryUpdate={handleTelemetryUpdate}
-              className="flex-1 min-h-[440px]"
-            />
+            {/* Camera container. Fullscreen restyles THIS element rather than
+                mounting a second WebcamFeed, so the single instance keeps its
+                camera stream, frame loop and backend session across the
+                transition. The two class strings are whole and mutually
+                exclusive, so `flex-1` and `fixed` are never both present. */}
+            <div
+              className={
+                cameraFull
+                  ? 'fixed inset-0 z-[9999] bg-black overflow-hidden'
+                  : 'flex-1 min-h-[440px] overflow-hidden'
+              }
+            >
+              {/* Unmounted while the ride is finalized, so its frame loop stops
+                  before the ride is closed rather than racing the close. */}
+              {feedMounted && (
+                <WebcamFeed
+                  onTelemetryUpdate={handleTelemetryUpdate}
+                  rideId={rideId}
+                  className="w-full h-full"
+                />
+              )}
+            </div>
 
-            {/* Status bar */}
+            {/* Status bar. Reports only what the feed measures: the camera state, whether
+                a face is currently visible, and the last AI result. The removed
+                "SENSOR: CALIBRATED" and "FLEET #4082" labels described hardware
+                calibration and a specific vehicle, neither of which anything here
+                measures. */}
             <div className="px-4 py-2 bg-surface-hover border-t border-border flex items-center justify-between text-[11px] font-mono text-text-muted">
               <div className="flex items-center gap-4">
-                <span>SENSOR: <strong className="text-safe">CALIBRATED</strong></span>
+                <span>
+                  CAMERA:{' '}
+                  <strong className={cameraActive ? 'text-safe' : 'text-warning'}>
+                    {(telemetry.cameraState ?? 'starting').replace('_', ' ').toUpperCase()}
+                  </strong>
+                </span>
                 <span className="hidden sm:inline">
                   DRIVER: <strong className={telemetry.faceDetected ? 'text-safe' : 'text-text-muted'}>
                     {telemetry.faceDetected ? 'VERIFIED' : 'SEARCHING'}
                   </strong>
                 </span>
               </div>
-              <span>FLEET #4082 · CABIN ACTIVE</span>
+              <span>AI: {(telemetry.detectionState ?? 'waiting').replace('_', ' ').toUpperCase()}</span>
             </div>
 
           </div>
@@ -431,7 +567,12 @@ export default memo(function Dashboard() {
                   )}
                 </div>
                 {scoreDisplay.score === null ? (
-                  <p className="text-[11px] text-text-muted leading-snug">{AI_STATUS_COPY[aiStatus]}</p>
+                  <div>
+                    <p className="text-[11px] text-text-muted leading-snug">{AI_STATUS_COPY[aiStatus]}</p>
+                    {aiStatus === 'warming_up' && telemetry.engineProgress && (
+                      <p className="text-[11px] text-primary font-mono leading-snug mt-0.5">{telemetry.engineProgress}</p>
+                    )}
+                  </div>
                 ) : scoreDisplay.held ? (
                   <p className="text-[11px] text-text-muted leading-snug">
                     Score held from the last analysed frame. {AI_STATUS_COPY[aiStatus]}
@@ -503,30 +644,24 @@ export default memo(function Dashboard() {
             <div className="pt-2 border-t border-border">
               <p className="text-[10px] font-mono text-text-muted uppercase tracking-wider mb-1.5">Cabin Objects</p>
               {hasSignal ? (
-                <>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(Object.keys(CATEGORY_ICONS) as CabinCategory[]).map(key => {
-                      const Icon = CATEGORY_ICONS[key]
-                      return (
-                        <div key={key} className="rounded-[8px] border border-border bg-card px-2 py-1.5 text-center">
-                          <Icon size={13} className="mx-auto" style={{ color: CATEGORY_COLORS[key] }} />
-                          <p className="text-sm font-extrabold font-mono mt-1">{cabinObjects[key] ?? 0}</p>
-                          <p className="text-[9px] font-mono text-text-muted uppercase">{key}</p>
-                        </div>
-                      )
-                    })}
-                  </div>
-                  {telemetry.yoloSkipped && (
-                    <p className="text-[10px] text-text-muted font-mono mt-1.5">
-                      Detection skipped this frame — holding the last tracked objects.
-                    </p>
-                  )}
-                </>
+                <div className="grid grid-cols-3 gap-2">
+                  {(Object.keys(CATEGORY_ICONS) as CabinCategory[]).map(key => {
+                    const Icon = CATEGORY_ICONS[key]
+                    return (
+                      <div key={key} className="rounded-[8px] border border-border bg-card px-2 py-1.5 text-center">
+                        <Icon size={13} className="mx-auto" style={{ color: CATEGORY_COLORS[key] }} />
+                        <p className="text-sm font-extrabold font-mono mt-1">{cabinObjects[key] ?? 0}</p>
+                        <p className="text-[9px] font-mono text-text-muted uppercase">{key}</p>
+                      </div>
+                    )
+                  })}
+                </div>
               ) : (
                 <p className="rounded-[8px] border border-border bg-card px-2.5 py-2 text-[11px] text-text-muted">
                   Counts unavailable while the AI signal is down.
                 </p>
               )}
+
               {telemetry.phoneCallSuspected && (
                 <p className="mt-1.5 text-[10px] font-mono text-warning inline-flex items-center gap-1">
                   <PhoneCall size={11} /> possible call, suspected ({(telemetry.phoneCallDuration ?? 0).toFixed(1)}s) — no phone detected
@@ -616,10 +751,11 @@ export default memo(function Dashboard() {
                 <button
                   type="button"
                   onClick={handleConfirmEndRide}
-                  className="px-4 py-1.5 rounded-[8px] bg-danger text-white text-xs font-semibold shadow-xs hover:bg-danger/90 transition-colors flex items-center gap-1.5"
+                  disabled={endingRide}
+                  className="px-4 py-1.5 rounded-[8px] bg-danger text-white text-xs font-semibold shadow-xs hover:bg-danger/90 transition-colors flex items-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <StopCircle size={13} />
-                  <span>Confirm End Ride</span>
+                  <span>{endingRide ? 'Ending...' : 'Confirm End Ride'}</span>
                 </button>
               </div>
             </motion.div>
@@ -627,26 +763,26 @@ export default memo(function Dashboard() {
         )}
       </AnimatePresence>
 
-      {/* Fullscreen Camera Modal */}
+      {/* Fullscreen header. Header only: the camera is the container above, restyled
+          to `fixed`, so no second feed is mounted. It overlays that container
+          (z-[10000] over z-[9999]) and lets pointer events fall through to the
+          feed apart from the close button. */}
       <AnimatePresence>
         {cameraFull && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black flex flex-col"
+            className="fixed top-0 left-0 right-0 z-[10000] pointer-events-none"
           >
             <div className="h-11 bg-[#070707] px-4 flex items-center justify-between text-white border-b border-white/10 flex-shrink-0">
-              <span className="font-semibold text-xs font-mono">CABIN CAM-01 · FULLSCREEN STREAM</span>
+              <span className="font-semibold text-xs font-mono">LIVE CAMERA · FULLSCREEN</span>
               <button
                 onClick={() => setCameraFull(false)}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-[6px] bg-white/10 hover:bg-white/20 text-xs font-medium transition-colors"
+                className="pointer-events-auto flex items-center gap-1 px-2.5 py-1 rounded-[6px] bg-white/10 hover:bg-white/20 text-xs font-medium transition-colors"
               >
                 <Minimize2 size={13} /> Close
               </button>
-            </div>
-            <div className="flex-1 relative overflow-hidden">
-              <WebcamFeed isRecording={isRecording} onTelemetryUpdate={handleTelemetryUpdate} className="w-full h-full" />
             </div>
           </motion.div>
         )}

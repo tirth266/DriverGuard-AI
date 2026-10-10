@@ -33,10 +33,8 @@ const PLANS = [
     features: [
       'AI Driver Monitoring',
       'Phone Detection',
-      'Drowsiness Alerts',
-      'Seat Belt Detection',
-      'Smoking Detection',
-      'Live Camera Dashboard',
+      'Eye Closure & Yawn Alerts',
+      'Ride Reports',
       '1 Driver / 1 Vehicle',
       'Unlimited Personal Use',
     ],

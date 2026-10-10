@@ -16,6 +16,10 @@ interface DetectionItem {
   badgeColor: string
 }
 
+/**
+ * Illustrative detections, for the visualisation only. The confidences are
+ * plausible sample values, not measurements from a frame.
+ */
 const DEMO_DETECTIONS: DetectionItem[] = [
   {
     id: 'person',
@@ -44,11 +48,11 @@ const DEMO_DETECTIONS: DetectionItem[] = [
     badgeColor: 'text-danger bg-danger/10 border-danger/30',
   },
   {
-    id: 'seatbelt',
-    label: 'SEATBELT',
-    name: 'Seatbelt Fastened',
-    confidence: 0.91,
-    status: 'Safe',
+    id: 'bottle',
+    label: 'BOTTLE',
+    name: 'Bottle In Cabin',
+    confidence: 0.88,
+    status: 'Normal',
     isCritical: false,
     coords: { x1: 240, y1: 180, x2: 520, y2: 460 },
     style: { top: '34%', left: '32%', width: '36%', height: '56%' },
@@ -57,6 +61,13 @@ const DEMO_DETECTIONS: DetectionItem[] = [
     badgeColor: 'text-safe bg-safe/10 border-safe/30',
   },
 ]
+
+/**
+ * These are sample detections for the illustration, not a capture. Every class
+ * shown is one the loaded model actually reports: the COCO classes the backend
+ * monitors (person, cell phone, bottle) plus nothing else. Seatbelt, posture and
+ * passenger detection are not classes in the model and are not shown.
+ */
 
 export default memo(function YoloShowcase() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -82,9 +93,9 @@ export default memo(function YoloShowcase() {
             <div className="px-5 py-3 border-b border-white/10 bg-surface/80 flex items-center justify-between text-xs font-mono text-text-secondary">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-safe" />
-                <span className="font-semibold text-text-primary">YOLO11 SPATIAL INFERENCE</span>
+                <span className="font-semibold text-text-primary">YOLO11 SPATIAL DETECTION</span>
               </div>
-              <span className="text-text-muted">CAMERA_FEED_01 · LIVE</span>
+              <span className="text-text-muted">SAMPLE · NOT LIVE</span>
             </div>
 
             {/* Visual Frame */}
@@ -143,16 +154,18 @@ export default memo(function YoloShowcase() {
               })}
             </div>
 
-            {/* Technical Metadata Footer */}
+            {/* Technical Metadata Footer. Model variant, precision and per-frame latency
+                are not asserted here: the weights variant, dtype and timing
+                depend on the deployment, and the monitoring view reports actual
+                latency per frame. */}
             <div className="px-5 py-3 bg-surface border-t border-border flex items-center justify-between text-xs font-mono text-text-muted flex-wrap gap-3">
               <div className="flex items-center gap-5">
-                <span>MODEL: <strong className="text-text-primary">YOLO11n</strong></span>
-                <span>INFERENCE: <strong className="text-safe">24ms</strong></span>
-                <span>PRECISION: <strong className="text-text-primary">FP16</strong></span>
+                <span>MODEL: <strong className="text-text-primary">YOLO11 (local weights)</strong></span>
+                <span>INFERENCE: <strong className="text-text-muted">measured live</strong></span>
               </div>
               <div className="flex items-center gap-1.5 text-text-secondary">
                 <CheckCircle2 size={13} className="text-safe" />
-                <span>Spatial Coordinates Verified</span>
+                <span>Sample detections</span>
               </div>
             </div>
 
@@ -175,8 +188,10 @@ export default memo(function YoloShowcase() {
             </h2>
 
             <p className="text-text-secondary text-sm leading-[1.65]">
-              True multi-object detection identifies bounding boxes, facial gaze, and hand-held
-              devices in parallel. Click any detected object below to isolate its bounding box.
+              True multi-object detection identifies bounding boxes and hand-held
+              devices in parallel. Click any detected object below to isolate its
+              bounding box. Head pose and eye state come from MediaPipe landmarks,
+              not from this model.
             </p>
           </div>
 
@@ -253,11 +268,15 @@ export default memo(function YoloShowcase() {
             </button>
           )}
 
-          {/* Engineering Credibility Note */}
+          {/* Engineering note */}
           <div className="p-3.5 rounded-[12px] bg-surface/40 border border-border/80 text-xs text-text-secondary flex items-start gap-2.5">
             <Activity size={15} className="text-brand flex-shrink-0 mt-0.5" />
             <span className="leading-relaxed text-[12px]">
-              <strong className="text-text-primary">Direct Neural Inference:</strong> The YOLO11 architecture calculates normalized spatial coordinates directly on edge silicon, avoiding cloud streaming delay.
+              <strong className="text-text-primary">Direct object detection:</strong> YOLO11 returns a
+              bounding box and confidence per detected object. Frames are sent to the backend for
+              inference; nothing is detected on-device and no video is stored. Only the classes the
+              loaded model contains are reported — phones, drinks and food in the cabin, plus the
+              driver.
             </span>
           </div>
 

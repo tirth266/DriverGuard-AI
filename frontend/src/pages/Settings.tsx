@@ -1,4 +1,4 @@
-import { memo, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   Settings,
@@ -10,24 +10,86 @@ import {
   Building2,
   Zap,
   CheckCircle2,
+  AlertTriangle,
 } from 'lucide-react'
+import { ApiError, settingsApi } from '../services/fleetApi'
 import { useToast } from '../context/ToastContext'
 import { useAuth, type AccountType } from '../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import Button from '../components/shared/Button'
 
+/**
+ * These three preferences are stored by GET/PUT /api/settings, but the detection
+ * pipeline does not read them: the drowsiness, audio and confirmation rules are
+ * fixed constants in the backend, and there is no weekly digest job. They are
+ * persisted so the account record is complete, and the UI says plainly which
+ * ones currently affect behaviour so "Saved" is not read as "now in effect".
+ */
 const SettingsPage = memo(function SettingsPage() {
   const [drowsinessSensitivity, setDrowsinessSensitivity] = useState('High')
   const [voiceAlerts, setVoiceAlerts] = useState(true)
   const [emailDigest, setEmailDigest] = useState(true)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
   const toast = useToast()
   const { user, setAccountType, switchWorkspace } = useAuth()
   const navigate = useNavigate()
 
   const currentType = user?.accountType ?? null
 
-  const handleSave = () => {
-    toast.success('Settings Saved', 'Your safety preferences have been updated.')
+  // Read what is actually stored, so the form shows the saved values rather than
+  // defaults that happen to match.
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        const { settings } = await settingsApi.get()
+        if (cancelled) return
+        setDrowsinessSensitivity(settings.drowsiness_sensitivity)
+        setVoiceAlerts(settings.voice_alerts_enabled)
+        setEmailDigest(settings.email_digest_enabled)
+      } catch (err) {
+        if (cancelled) return
+        setLoadError(
+          err instanceof ApiError
+            ? `Could not load your saved settings: ${err.message}`
+            : 'Could not load your saved settings.',
+        )
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    void load()
+    return () => { cancelled = true }
+  }, [])
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      // Persisted for real: only now is it true that the change was saved.
+      const { settings } = await settingsApi.update({
+        drowsiness_sensitivity: drowsinessSensitivity,
+        voice_alerts_enabled: voiceAlerts,
+        email_digest_enabled: emailDigest,
+      })
+      setDrowsinessSensitivity(settings.drowsiness_sensitivity)
+      setVoiceAlerts(settings.voice_alerts_enabled)
+      setEmailDigest(settings.email_digest_enabled)
+      toast.success(
+        'Settings Saved',
+        'Stored on your account. None of these change detection behaviour in the current build.',
+      )
+    } catch (err) {
+      toast.error(
+        'Settings Not Saved',
+        err instanceof ApiError
+          ? `The server rejected the change: ${err.message}`
+          : 'The server could not be reached, so nothing was saved.',
+      )
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleSwitchType = (type: AccountType) => {
@@ -141,16 +203,35 @@ const SettingsPage = memo(function SettingsPage() {
           </div>
         </div>
 
+        {/* Load and save state, stated plainly rather than implied by a toast */}
+        {loadError && (
+          <div className="p-4 rounded-2xl bg-card border border-danger/30 flex items-start gap-3">
+            <AlertTriangle size={18} className="text-danger flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-on-surface-variant leading-relaxed">
+              {loadError} The values below are defaults and have not been confirmed from your
+              account.
+            </p>
+          </div>
+        )}
+
         {/* AI Detection Sensitivity */}
         <div className="bg-card border border-border rounded-2xl p-6 shadow-md space-y-6">
           <h2 className="text-lg font-bold text-on-surface border-b border-border pb-4 flex items-center gap-2">
             <Shield className="text-primary" size={20} /> AI Safety Detection Sensitivity
           </h2>
 
+          <p className="text-xs text-on-surface-variant leading-relaxed">
+            Stored on your account. The current build detects drowsiness at fixed thresholds, so
+            changing this does not alter what is flagged.
+          </p>
+
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-2">
-                Fatigue & Drowsiness Threshold
+                Fatigue &amp; Drowsiness Threshold
+                <span className="ml-2 font-normal normal-case text-warning">
+                  Not applied to detection
+                </span>
               </label>
               <select
                 value={drowsinessSensitivity}
@@ -176,8 +257,11 @@ const SettingsPage = memo(function SettingsPage() {
               <div className="flex items-center gap-3">
                 <Volume2 className="text-on-surface-variant" size={20} />
                 <div>
-                  <p className="text-sm font-semibold text-on-surface">Voice & Audio Alerts</p>
-                  <p className="text-xs text-on-surface-variant">Play audio tone during active safety warnings.</p>
+                  <p className="text-sm font-semibold text-on-surface">Audio Alert Tone</p>
+                  <p className="text-xs text-on-surface-variant">
+                    Stored on your account. The in-app alert tone is currently controlled by the
+                    sound toggle on the monitoring screen, not by this setting.
+                  </p>
                 </div>
               </div>
               <input
@@ -193,7 +277,10 @@ const SettingsPage = memo(function SettingsPage() {
                 <Bell className="text-on-surface-variant" size={20} />
                 <div>
                   <p className="text-sm font-semibold text-on-surface">Email Safety Digests</p>
-                  <p className="text-xs text-on-surface-variant">Receive weekly summary reports of safety events.</p>
+                  <p className="text-xs text-on-surface-variant">
+                    Stored on your account. No digest emails are sent in the current build, and
+                    ride reports are generated on request rather than on a schedule.
+                  </p>
                 </div>
               </div>
               <input
@@ -206,10 +293,17 @@ const SettingsPage = memo(function SettingsPage() {
           </div>
         </div>
 
-        {/* Save Button */}
+        {/* Save: writes to /api/settings, so success here means it was persisted. */}
         <div className="flex justify-end pt-4">
-          <Button variant="primary" size="md" onClick={handleSave} className="flex items-center gap-2">
-            <Save size={16} /> Save Settings
+          <Button
+            variant="primary"
+            size="md"
+            onClick={handleSave}
+            disabled={saving || loading}
+            className="flex items-center gap-2"
+          >
+            <Save size={16} />
+            {loading ? 'Loading…' : saving ? 'Saving…' : 'Save Settings'}
           </Button>
         </div>
       </motion.div>

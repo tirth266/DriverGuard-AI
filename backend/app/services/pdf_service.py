@@ -140,21 +140,28 @@ def generate_ride_report(ride_data: Dict[str, Any]) -> bytes:
     story.append(Spacer(1, 20))
     
     # ── Safety Score ──
-    session_summary = ride_data.get('session_summary', {})
-    final_score = session_summary.get('final_score', 'N/A')
-    grade = session_summary.get('grade', 'N/A')
-    lowest_score = session_summary.get('lowest_session_score', 'N/A')
+    # A finalized ride always carries a summary: the route refuses to render a
+    # report without one, so a missing value here means a caller reached this
+    # service directly. Rendered as an explicit dash rather than "N/A/100",
+    # which read as a score of "N/A out of 100" on the face of the document.
+    session_summary = ride_data.get('session_summary') or {}
+    final_score = session_summary.get('final_score')
+    grade = session_summary.get('grade')
+    lowest_score = session_summary.get('lowest_session_score')
     total_events = session_summary.get('total_events', 0)
     phone_events = session_summary.get('phone_events', 0)
     total_distracted_duration = session_summary.get('total_distracted_duration', 0)
+
+    def as_score(value) -> str:
+        return f'{value}/100' if value is not None else 'Not recorded'
 
     story.append(Paragraph("Safety Score Summary", heading_style))
 
     score_data = [
         ['Metric', 'Value'],
-        ['Final Safety Score', f'{final_score}/100'],
-        ['Grade', str(grade)],
-        ['Lowest Session Score', f'{lowest_score}/100'],
+        ['Final Safety Score', as_score(final_score)],
+        ['Grade', str(grade) if grade is not None else 'Not recorded'],
+        ['Lowest Session Score', as_score(lowest_score)],
         ['Total Events', str(total_events)],
         ['Phone Events', str(phone_events)],
         ['Total Distracted Duration', f'{total_distracted_duration}s'],
@@ -195,8 +202,18 @@ def generate_ride_report(ride_data: Dict[str, Any]) -> bytes:
             max_conf = event.get('max_confidence')
             min_score = event.get('min_score', 0)
             
-            start_str = datetime.fromtimestamp(start_ts).strftime('%H:%M:%S') if start_ts else 'N/A'
-            end_str = datetime.fromtimestamp(end_ts).strftime('%H:%M:%S') if end_ts else 'N/A'
+            # Rendered in UTC, because the ride's own start and end times are
+            # stored and printed in UTC. datetime.fromtimestamp() without a tz
+            # would render these in the server's local zone, so the two time
+            # columns in the same document could disagree by the host's offset.
+            start_str = (
+                datetime.fromtimestamp(start_ts, tz=timezone.utc).strftime('%H:%M:%S')
+                if start_ts else 'N/A'
+            )
+            end_str = (
+                datetime.fromtimestamp(end_ts, tz=timezone.utc).strftime('%H:%M:%S')
+                if end_ts else 'N/A'
+            )
             conf_str = f'{max_conf:.1%}' if max_conf is not None else 'N/A'
             
             event_rows.append([
@@ -233,7 +250,7 @@ def generate_ride_report(ride_data: Dict[str, Any]) -> bytes:
     story.append(HRFlowable(width="100%", thickness=1, color=HexColor('#e0e0e0')))
     story.append(Spacer(1, 10))
     story.append(Paragraph(
-        f"Report generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC",
+        f"Report generated on {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC",
         small_style
     ))
     story.append(Paragraph(
@@ -246,20 +263,3 @@ def generate_ride_report(ride_data: Dict[str, Any]) -> bytes:
     
     buffer.seek(0)
     return buffer.read()
-
-
-def format_duration(seconds: Optional[int]) -> str:
-    """Format seconds into human-readable duration."""
-    if not seconds or seconds <= 0:
-        return 'Not Available'
-    h = seconds // 3600
-    m = (seconds % 3600) // 60
-    s = seconds % 60
-    parts = []
-    if h > 0:
-        parts.append(f'{h}h')
-    if m > 0:
-        parts.append(f'{m}m')
-    if s > 0:
-        parts.append(f'{s}s')
-    return ' '.join(parts) if parts else '0s'

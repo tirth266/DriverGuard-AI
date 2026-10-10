@@ -26,7 +26,6 @@ export default memo(function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
-  const [unreadNotifications, setUnreadNotifications] = useState(2)
   const scrolled = scrollY > 15
 
   const { user, isAuthenticated, logout } = useAuth()
@@ -220,7 +219,9 @@ export default memo(function Navbar() {
                 </Link>
               )}
 
-              {/* Notifications with counter dot only when unread */}
+              {/* There is no unread count to show: nothing produces a
+                  notification, so the badge would only ever be a hardcoded
+                  number. */}
               <div className="relative">
                 <button
                   onClick={() => {
@@ -231,9 +232,6 @@ export default memo(function Navbar() {
                   aria-label="Notifications"
                 >
                   <Bell size={15} />
-                  {unreadNotifications > 0 && (
-                    <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-warning" />
-                  )}
                 </button>
 
                 <AnimatePresence>
@@ -247,32 +245,18 @@ export default memo(function Navbar() {
                     >
                       <div className="flex items-center justify-between pb-2 mb-2 border-b border-border">
                         <span className="text-xs font-semibold text-text-primary">Fleet Notifications</span>
-                        {unreadNotifications > 0 && (
-                          <button
-                            onClick={() => setUnreadNotifications(0)}
-                            className="text-[10px] text-brand hover:underline font-medium cursor-pointer"
-                          >
-                            Mark all read
-                          </button>
-                        )}
                       </div>
 
-                      <div className="space-y-2">
-                        <div className="p-2 rounded-[8px] bg-card border border-border/60">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-semibold text-text-primary">AI Telemetry Active</span>
-                            <span className="text-[9px] text-text-muted">Just now</span>
-                          </div>
-                          <p className="text-[11px] text-text-secondary mt-0.5">YOLO11 stream verified at 30 FPS.</p>
-                        </div>
-                        <div className="p-2 rounded-[8px] bg-card border border-border/60">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-semibold text-warning">Rest Interval Recommended</span>
-                            <span className="text-[9px] text-text-muted">18m ago</span>
-                          </div>
-                          <p className="text-[11px] text-text-secondary mt-0.5">Marcus Vance exceeded 4h continuous driving.</p>
-                        </div>
-                      </div>
+                      {/* There is no notifications feed to render. Nothing in the
+                          product creates one: safety events are recorded against
+                          the ride being monitored and are read from that ride's
+                          report. This panel used to show a hardcoded pair of
+                          invented alerts with a fixed unread count, which read as
+                          live telemetry about drivers who do not exist. */}
+                      <p className="p-2 rounded-[8px] bg-card border border-border/60 text-[11px] text-text-secondary leading-relaxed">
+                        No notifications. Alerts are recorded against the ride being
+                        monitored and shown on that ride's report.
+                      </p>
                     </motion.div>
                   )}
                 </AnimatePresence>

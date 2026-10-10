@@ -8,8 +8,6 @@ import {
   Maximize2,
   Minimize2,
   ChevronDown,
-  Wifi,
-  MapPin,
   Clock,
   Truck,
   User as UserIcon,
@@ -94,31 +92,22 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           </span>
         </Link>
 
-        {/* Center: Live Telemetry Metadata (hidden on mobile) */}
+        {/* Center: account context and the local clock.
+
+            These read from the signed-in session and the browser clock only. No
+            vehicle id, GPS fix, connectivity state or trip status is shown here:
+            nothing in the app measures them, so a fixed vehicle number or a
+            "GPS LOCKED" badge would assert something never observed. */}
         <div className="hidden md:flex items-center gap-4 text-xs font-mono text-text-secondary">
           <div className="flex items-center gap-2 bg-card px-2.5 py-1 rounded-[6px] border border-border">
-            <Truck size={12} className="text-brand" />
-            <span className="font-semibold text-text-primary">FLEET #4082</span>
-            <span className="text-[10px] text-text-muted">Cascadia</span>
-          </div>
-
-          <div className="flex items-center gap-1.5 text-text-secondary">
-            <span className="w-1.5 h-1.5 rounded-full bg-safe animate-pulse" />
-            <span className="font-medium text-text-primary">{user?.name || 'Driver In Transit'}</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded-[4px] bg-safe/10 text-safe font-bold border border-safe/20">
-              ACTIVE
+            <UserIcon size={12} className="text-brand" />
+            <span className="font-semibold text-text-primary">{user?.name || 'Operator'}</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-[4px] bg-safe/10 text-safe font-bold border border-safe/20">
+              {isBusiness ? 'FLEET' : 'PERSONAL'}
             </span>
           </div>
 
-          <div className="hidden lg:flex items-center gap-3 border-l border-border pl-4 text-text-muted">
-            <span className="flex items-center gap-1">
-              <MapPin size={11} className="text-safe" />
-              <span>GPS: LOCKED</span>
-            </span>
-            <span className="flex items-center gap-1">
-              <Wifi size={11} className="text-safe" />
-              <span>5G</span>
-            </span>
+          <div className="hidden lg:flex items-center gap-3 text-text-muted">
             <span className="flex items-center gap-1 font-mono bg-card px-2 py-0.5 rounded-[4px] border border-border text-text-primary font-bold">
               <Clock size={11} className="text-brand" />
               {currentTime}
@@ -140,7 +129,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
           </button>
 
-          {/* Notifications */}
+          {/* Notifications. No alert feed exists, so there is nothing to unread-badge;
+              the panel states that rather than showing a permanently "1 new"
+              dot over an empty list. */}
           <div className="relative">
             <button
               onClick={() => { setNotificationsOpen(!notificationsOpen); setProfileOpen(false) }}
@@ -148,7 +139,6 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               aria-label="Notifications"
             >
               <Bell size={15} />
-              <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-warning" />
             </button>
 
             <AnimatePresence>
@@ -161,15 +151,12 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   className="absolute right-0 mt-2 w-72 bg-surface border border-border rounded-[14px] shadow-2xl p-3 z-50 space-y-2"
                 >
                   <div className="flex items-center justify-between pb-2 border-b border-border">
-                    <span className="text-xs font-semibold text-text-primary">Cabin Live Telemetry</span>
-                    <span className="text-[10px] bg-safe/10 text-safe px-1.5 py-0.2 rounded font-mono font-bold">LIVE</span>
+                    <span className="text-xs font-semibold text-text-primary">Notifications</span>
                   </div>
-                  <div className="space-y-1.5">
-                    <div className="p-2 rounded-[8px] bg-card border border-border/60">
-                      <p className="text-xs font-semibold text-text-primary">Trip Telemetry Operational</p>
-                      <p className="text-[11px] text-text-secondary">YOLO11 stream calibrated at 30 FPS.</p>
-                    </div>
-                  </div>
+                  <p className="p-2 rounded-[8px] bg-card border border-border/60 text-[11px] text-text-secondary leading-relaxed">
+                    No notifications. Alerts are recorded against the ride being
+                    monitored and shown on that ride's report.
+                  </p>
                 </motion.div>
               )}
             </AnimatePresence>

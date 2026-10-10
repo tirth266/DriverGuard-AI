@@ -108,10 +108,32 @@ class VehicleUpdate(BaseModel):
 # get_current_user_id is imported from app.auth.controller
 
 
+def get_user_company_ids(user_id: str, db: Session) -> List[int]:
+    """
+    Every company id this user owns.
+
+    A user may own more than one, so this is a list and not a single id: the
+    ride authorization layer already resolves all of them
+    (RideService.get_permitted_company_ids), and fleet CRUD returning only the
+    first meant an owner of two companies could start a ride using a driver from
+    the second one while being unable to see or manage that driver here.
+    """
+    return [
+        row[0] for row in
+        db.query(Company.id).filter(Company.owner_id == int(user_id)).all()
+    ]
+
+
 def get_user_company_id(user_id: str, db: Session) -> Optional[int]:
-    """Get the company ID for the current user."""
-    company = db.query(Company).filter(Company.owner_id == int(user_id)).first()
-    return company.id if company else None
+    """
+    The company a write should be attributed to.
+
+    The first owned company, which is the only one `POST /api/fleet/company`
+    lets a user create. Reads use get_user_company_ids so they are not silently
+    limited to that single company.
+    """
+    company_ids = get_user_company_ids(user_id, db)
+    return company_ids[0] if company_ids else None
 
 
 # ── Company Routes ─────────────────────────────────────────────────────────────
@@ -250,6 +272,10 @@ async def create_driver(
             gender=body.gender,
             license_number=body.license_number,
             driver_type=body.driver_type,
+            # Accepted by the schema and offered by the UI, but never assigned
+            # here, so the value the user entered was silently discarded while
+            # the column stayed empty.
+            experience_years=body.experience_years,
             vehicle_number=body.vehicle_number,
             department=body.department,
             emergency_contact_name=body.emergency_contact_name,
@@ -295,13 +321,13 @@ async def list_drivers(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
-    """GET /api/fleet/drivers - List drivers for user's company."""
+    """GET /api/fleet/drivers - List drivers for the user's companies."""
     try:
-        company_id = get_user_company_id(current_user_id, db)
-        if not company_id:
+        company_ids = get_user_company_ids(current_user_id, db)
+        if not company_ids:
             return JSONResponse({'success': True, 'drivers': [], 'total': 0}, status_code=200)
 
-        query = db.query(Driver).filter(Driver.company_id == company_id)
+        query = db.query(Driver).filter(Driver.company_id.in_(company_ids))
         total = query.count()
         drivers = query.offset((page - 1) * page_size).limit(page_size).all()
 
@@ -325,11 +351,11 @@ async def get_driver(
 ):
     """GET /api/fleet/drivers/{driver_id} - Get driver details."""
     try:
-        company_id = get_user_company_id(current_user_id, db)
+        company_ids = get_user_company_ids(current_user_id, db)
         if not company_id:
             return JSONResponse({'success': False, 'message': 'No company found for user.'}, status_code=404)
 
-        driver = db.query(Driver).filter(Driver.id == driver_id, Driver.company_id == company_id).first()
+        driver = db.query(Driver).filter(Driver.id == driver_id, Driver.company_id.in_(company_ids)).first()
         if not driver:
             return JSONResponse({'success': False, 'message': 'Driver not found.'}, status_code=404)
 
@@ -351,11 +377,11 @@ async def update_driver(
 ):
     """PUT /api/fleet/drivers/{driver_id} - Update driver."""
     try:
-        company_id = get_user_company_id(current_user_id, db)
+        company_ids = get_user_company_ids(current_user_id, db)
         if not company_id:
             return JSONResponse({'success': False, 'message': 'No company found for user.'}, status_code=404)
 
-        driver = db.query(Driver).filter(Driver.id == driver_id, Driver.company_id == company_id).first()
+        driver = db.query(Driver).filter(Driver.id == driver_id, Driver.company_id.in_(company_ids)).first()
         if not driver:
             return JSONResponse({'success': False, 'message': 'Driver not found.'}, status_code=404)
 
@@ -389,11 +415,11 @@ async def delete_driver(
 ):
     """DELETE /api/fleet/drivers/{driver_id} - Delete driver."""
     try:
-        company_id = get_user_company_id(current_user_id, db)
+        company_ids = get_user_company_ids(current_user_id, db)
         if not company_id:
             return JSONResponse({'success': False, 'message': 'No company found for user.'}, status_code=404)
 
-        driver = db.query(Driver).filter(Driver.id == driver_id, Driver.company_id == company_id).first()
+        driver = db.query(Driver).filter(Driver.id == driver_id, Driver.company_id.in_(company_ids)).first()
         if not driver:
             return JSONResponse({'success': False, 'message': 'Driver not found.'}, status_code=404)
 
@@ -506,11 +532,11 @@ async def list_vehicles(
 ):
     """GET /api/fleet/vehicles - List vehicles for user's company."""
     try:
-        company_id = get_user_company_id(current_user_id, db)
+        company_ids = get_user_company_ids(current_user_id, db)
         if not company_id:
             return JSONResponse({'success': True, 'vehicles': [], 'total': 0}, status_code=200)
 
-        query = db.query(Vehicle).filter(Vehicle.company_id == company_id)
+        query = db.query(Vehicle).filter(Vehicle.company_id.in_(company_ids))
         total = query.count()
         vehicles = query.offset((page - 1) * page_size).limit(page_size).all()
 
@@ -534,11 +560,11 @@ async def get_vehicle(
 ):
     """GET /api/fleet/vehicles/{vehicle_id} - Get vehicle details."""
     try:
-        company_id = get_user_company_id(current_user_id, db)
+        company_ids = get_user_company_ids(current_user_id, db)
         if not company_id:
             return JSONResponse({'success': False, 'message': 'No company found for user.'}, status_code=404)
 
-        vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id, Vehicle.company_id == company_id).first()
+        vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id, Vehicle.company_id.in_(company_ids)).first()
         if not vehicle:
             return JSONResponse({'success': False, 'message': 'Vehicle not found.'}, status_code=404)
 
@@ -560,11 +586,11 @@ async def update_vehicle(
 ):
     """PUT /api/fleet/vehicles/{vehicle_id} - Update vehicle."""
     try:
-        company_id = get_user_company_id(current_user_id, db)
+        company_ids = get_user_company_ids(current_user_id, db)
         if not company_id:
             return JSONResponse({'success': False, 'message': 'No company found for user.'}, status_code=404)
 
-        vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id, Vehicle.company_id == company_id).first()
+        vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id, Vehicle.company_id.in_(company_ids)).first()
         if not vehicle:
             return JSONResponse({'success': False, 'message': 'Vehicle not found.'}, status_code=404)
 
@@ -598,11 +624,11 @@ async def delete_vehicle(
 ):
     """DELETE /api/fleet/vehicles/{vehicle_id} - Delete vehicle."""
     try:
-        company_id = get_user_company_id(current_user_id, db)
+        company_ids = get_user_company_ids(current_user_id, db)
         if not company_id:
             return JSONResponse({'success': False, 'message': 'No company found for user.'}, status_code=404)
 
-        vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id, Vehicle.company_id == company_id).first()
+        vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id, Vehicle.company_id.in_(company_ids)).first()
         if not vehicle:
             return JSONResponse({'success': False, 'message': 'Vehicle not found.'}, status_code=404)
 

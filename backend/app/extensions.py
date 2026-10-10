@@ -10,6 +10,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from dotenv import load_dotenv
 
+from app.config import require_secret
+
 _backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _env_path = os.path.join(_backend_dir, ".env")
 if os.path.exists(_env_path):
@@ -43,6 +45,9 @@ def get_db():
 
 
 # ── JWT ───────────────────────────────────────────────────────────────────────
-JWT_SECRET_KEY = os.environ.get("JWT_SECRET", "jwt-secret-change-in-prod")
+# One definition only: every module that signs or verifies a token imports the
+# key from here. No default — see app.config.require_secret. The algorithm and
+# the token lifetime are unchanged.
+JWT_SECRET_KEY = require_secret("JWT_SECRET", "sign and verify access tokens")
 JWT_ALGORITHM = "HS256"
 JWT_ACCESS_TOKEN_EXPIRES = 7 * 24 * 60 * 60  # 7 days in seconds

@@ -24,23 +24,29 @@ interface StepData {
   stats: { label: string; value: string }[]
 }
 
+/**
+ * The steps below describe what the pipeline actually does. Anything whose value
+ * depends on the deployment — latency, frame rate, resolution — is named but not
+ * given a number here, because a fixed figure would be a guess. The monitoring
+ * view reports real per-frame latency and frame rate for the current device.
+ */
 const PIPELINE_STEPS: StepData[] = [
   {
     id: 1,
     code: '01',
     title: 'Camera Cabin Monitoring',
-    subtitle: 'High-Fidelity Optical Stream',
+    subtitle: 'Browser Camera Stream',
     description:
-      'An interior sensor captures the vehicle cabin in real-time, operating in all ambient lighting environments including zero-lux infrared night drives.',
+      'The driver grants camera access and the browser supplies a video stream, sampled into frames on a fixed interval. Frame rate and resolution are whatever the camera provides.',
     tag: 'VIDEO INPUT',
-    hudLabel: 'CABIN STREAM 720P',
+    hudLabel: 'CABIN STREAM',
     hudStatus: 'CAPTURING STREAM',
     hudColor: 'text-blue-400 border-blue-500/40 bg-blue-500/10',
     icon: Camera,
     stats: [
-      { label: 'FRAME RATE', value: '30 FPS' },
-      { label: 'RESOLUTION', value: '1280x720' },
-      { label: 'SENSOR', value: 'IR NIGHT READY' },
+      { label: 'FRAME RATE', value: 'MEASURED LIVE' },
+      { label: 'RESOLUTION', value: 'CAMERA PROVIDED' },
+      { label: 'SOURCE', value: 'BROWSER WEBCAM' },
     ],
   },
   {
@@ -49,70 +55,70 @@ const PIPELINE_STEPS: StepData[] = [
     title: 'YOLO11 Object Detection',
     subtitle: 'Spatial Localization & Bounding Boxes',
     description:
-      'Ultra-fast YOLO11 neural network runs spatial object detection across cabin objects, returning exact integer coordinates for driver, cell phone, seatbelt, and obstacles.',
+      'YOLO11 runs object detection over each frame and returns a bounding box and confidence per object. The monitored classes are the driver, cell phones, drinks and food — the model does not detect seatbelts, posture or passengers.',
     tag: 'NEURAL INFERENCE',
     hudLabel: 'YOLO11 DETECTING',
     hudStatus: 'OBJECTS IDENTIFIED',
     hudColor: 'text-emerald-400 border-emerald-500/40 bg-emerald-500/10',
     icon: Scan,
     stats: [
-      { label: 'INFERENCE', value: '24 MS' },
-      { label: 'OBJECTS', value: 'PERSON, PHONE, BELT' },
-      { label: 'ACCURACY', value: 'HIGH CONFIDENCE' },
+      { label: 'INFERENCE', value: 'MEASURED LIVE' },
+      { label: 'OBJECTS', value: 'PERSON, PHONE, DRINK' },
+      { label: 'CONFIDENCE', value: 'PER DETECTION' },
     ],
   },
   {
     id: 3,
     code: '03',
-    title: 'Driver Behavior & Gaze Analysis',
-    subtitle: 'Attention & Head Pose Tracking',
+    title: 'Face Landmark Analysis',
+    subtitle: 'Eye State & Head Pose',
     description:
-      'Continuous computer vision tracking monitors eye disengagement, prolonged head tilts, micro-sleeps, and distraction durations before hazards turn into collisions.',
-    tag: 'BEHAVIOR GAZE',
-    hudLabel: 'DRIVER ATTENTION',
-    hudStatus: 'GAZE ON ROAD',
+      'MediaPipe face landmarks give eye openness, mouth opening and head orientation. Eyes closed, drowsiness, yawning and head turned or lowered are derived from those. Eye-gaze direction is not measured.',
+    tag: 'FACE LANDMARKS',
+    hudLabel: 'FACE ANALYSIS',
+    hudStatus: 'LANDMARKS FOUND',
     hudColor: 'text-indigo-400 border-indigo-500/40 bg-indigo-500/10',
     icon: Eye,
     stats: [
-      { label: 'ATTENTION', value: '98% FOCUSED' },
-      { label: 'DROWSINESS', value: 'LEVEL 2 (LOW)' },
-      { label: 'BLINKS', value: 'NORMAL RATE' },
+      { label: 'EYE STATE', value: 'OPEN / CLOSED' },
+      { label: 'HEAD POSE', value: 'YAW / PITCH' },
+      { label: 'MOUTH', value: 'OPEN / CLOSED' },
     ],
   },
   {
     id: 4,
     code: '04',
-    title: 'Intelligent Risk Grading',
-    subtitle: 'False-Positive Elimination Engine',
+    title: 'Confirmed-Event Scoring',
+    subtitle: 'Multi-Frame Confirmation',
     description:
-      'Advanced safety heuristics filter minor hand adjustments, distinguishing critical distractions like texting or dozing off from normal driving operations.',
+      'A detection must persist across several frames before it becomes a confirmed event. Confirmed events and their durations drive a 0-100 safety score for the ride.',
     tag: 'RISK ASSESSMENT',
-    hudLabel: 'SAFETY SCORE 96/100',
-    hudStatus: 'MONITORING CLEAR',
+    hudLabel: 'SCORING RIDE',
+    hudStatus: 'EVENTS CONFIRMED',
     hudColor: 'text-cyan-400 border-cyan-500/40 bg-cyan-500/10',
     icon: Activity,
     stats: [
-      { label: 'RISK GRADE', value: 'A+ SAFE' },
-      { label: 'FILTERING', value: 'MULTI-FRAME' },
-      { label: 'TELEMETRY', value: 'VERIFIED' },
+      { label: 'CONFIRMATION', value: 'MULTI-FRAME' },
+      { label: 'SCORE RANGE', value: '0-100 PER RIDE' },
+      { label: 'BASIS', value: 'EVENT DURATIONS' },
     ],
   },
   {
     id: 5,
     code: '05',
-    title: 'Instant Voice Alert & Fleet Notification',
-    subtitle: 'Immediate Intervention',
+    title: 'Alert Tone & Ride Report',
+    subtitle: 'On-Screen Intervention',
     description:
-      'When unsafe behavior is verified, the in-cabin speaker triggers an instant auditory alert to wake or refocus the driver, while event logs dispatch to fleet managers.',
-    tag: 'AUDIO INTERVENTION',
-    hudLabel: 'ALERT ENGINE ARMED',
-    hudStatus: 'VOICE SYNTH READY',
+      'An eye alert plays a short tone on the monitoring device. Every confirmed event is stored against the ride, and ending the ride freezes its score and produces a report from that record.',
+    tag: 'ALERT & REPORT',
+    hudLabel: 'ALERT TONE',
+    hudStatus: 'EVENTS RECORDED',
     hudColor: 'text-amber-400 border-amber-500/40 bg-amber-500/10',
     icon: Volume2,
     stats: [
-      { label: 'SPEECH LATENCY', value: '&lt; 15 MS' },
-      { label: 'COOLDOWN', value: 'SMART 5 SEC' },
-      { label: 'FLEET SYNC', value: 'WEBHOOK READY' },
+      { label: 'AUDIO', value: 'IN-APP TONE' },
+      { label: 'STORAGE', value: 'EVENTS PER RIDE' },
+      { label: 'OUTPUT', value: 'RIDE REPORT' },
     ],
   },
 ]
@@ -159,7 +165,7 @@ const Pipeline = memo(function Pipeline() {
         <SectionTitle
           badge="AI Architecture"
           title="The DriverGuard AI Safety Pipeline"
-          subtitle="From optical frame capture to millisecond voice intervention — how our multi-stage pipeline protects every mile."
+          subtitle="From camera frames to a stored ride report — the stages a monitored ride passes through."
           centered
           className="mb-16 md:mb-24"
         />

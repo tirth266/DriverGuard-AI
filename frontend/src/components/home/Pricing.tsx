@@ -6,61 +6,63 @@ import Button from '../shared/Button'
 import GlassCard from '../shared/Card'
 import { use3DTilt } from '../../hooks/use3DTilt'
 
+/**
+ * What the software does, not a commercial offer.
+ *
+ * These were priced tiers with per-vehicle limits, SLAs, API access, push
+ * notifications, white-labeling and on-site installation. None of that exists:
+ * there is no billing system, no per-vehicle quota, no public API, and no push
+ * notification channel. Presenting them as purchasable plans describes a
+ * product that has not been built, so the tiers below describe capability
+ * instead and say plainly that nothing is for sale yet.
+ */
 const PLANS = [
   {
-    name: 'Starter',
-    description: 'For small fleets getting started with driver safety.',
-    price: '$29',
-    period: '/vehicle/mo',
+    name: 'Personal',
+    description: 'One driver, one ride at a time, scored end to end.',
+    price: 'Free',
+    period: '',
     features: [
-      'Up to 25 vehicles',
-      'Fatigue & phone detection',
-      'Real-time voice alerts',
-      'Basic dashboard',
-      'Email notifications',
-      'Standard support',
+      'Single-ride live monitoring',
+      'Phone, drinking & eating detection',
+      'Drowsiness, yawning & head-pose detection',
+      'Ride score, grade and event timeline',
+      'PDF ride report',
     ],
-    cta: 'Contact Sales',
+    cta: 'Get Started',
     variant: 'secondary' as const,
     highlight: false,
   },
   {
-    name: 'Professional',
-    description: 'For growing fleets that need advanced monitoring.',
-    price: '$49',
-    period: '/vehicle/mo',
-    features: [
-      'Up to 200 vehicles',
-      'All detection features',
-      'Real-time voice alerts',
-      'Advanced dashboard & analytics',
-      'Instant push notifications',
-      'Incident reports',
-      'API access',
-      'Priority support',
-    ],
-    cta: 'Book Demo',
-    variant: 'primary' as const,
-    highlight: true,
-    badge: 'Most Popular',
-  },
-  {
-    name: 'Enterprise',
-    description: 'For large organizations with custom requirements.',
-    price: 'Custom',
+    name: 'Fleet',
+    description: 'Drivers and vehicles, with rides attributed to both.',
+    price: 'Free',
     period: '',
     features: [
-      'Unlimited vehicles',
-      'All detection features',
-      'Custom alert rules',
-      'White-label dashboard',
-      'Dedicated account manager',
-      'Custom integrations',
-      'SLA guarantee',
-      'On-site installation',
-      '24/7 premium support',
+      'Everything in Personal',
+      'Driver and vehicle records',
+      'Ride history per driver and vehicle',
+      'Ride reports as PDF',
+      'Email invitations to your own drivers',
     ],
-    cta: 'Contact Sales',
+    cta: 'Set Up Fleet',
+    variant: 'primary' as const,
+    highlight: true,
+    badge: 'Available now',
+  },
+  {
+    name: 'Not yet built',
+    description: 'Capabilities this product does not have yet.',
+    price: '',
+    period: '',
+    features: [
+      'Billing or subscriptions',
+      'Public API or webhooks',
+      'SSO / SAML sign-in',
+      'Push or SMS notifications',
+      'Multi-vehicle live view',
+    ],
+    cta: '',
     variant: 'secondary' as const,
     highlight: false,
   },
@@ -132,15 +134,19 @@ function PricingCard({ plan, index }: { plan: typeof PLANS[0]; index: number }) 
           </ul>
 
           {/* CTA */}
-          <a href="#contact">
-            <Button
-              variant={plan.variant}
-              size="lg"
-              className="w-full"
-            >
-              {plan.cta}
-            </Button>
-          </a>
+          {/* CTA. The third card has none: it lists what is missing, so there is
+              nothing to sign up for. */}
+          {plan.cta && (
+            <a href="#contact">
+              <Button
+                variant={plan.variant}
+                size="lg"
+                className="w-full"
+              >
+                {plan.cta}
+              </Button>
+            </a>
+          )}
         </GlassCard>
       </div>
     </motion.div>

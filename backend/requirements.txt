@@ -1,6 +1,7 @@
 # Server
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
+slowapi==0.1.10
 
 # Database
 SQLAlchemy==2.0.36
@@ -15,6 +16,12 @@ httpx==0.27.2
 
 # Session middleware (for OAuth state/CSRF)
 itsdangerous==2.2.0
+
+# Reports (PDF ride summary / fleet report)
+reportlab==5.0.1
+
+# Email (pydantic.EmailStr validation on notification payloads)
+email-validator==2.1.0
 
 # Environment & Config
 python-dotenv==1.1.0

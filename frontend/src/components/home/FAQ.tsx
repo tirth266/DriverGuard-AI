@@ -7,32 +7,32 @@ const FAQ_ITEMS = [
   {
     question: 'How does DriverGuard AI work?',
     answer:
-      'DriverGuard AI connects to an in-cabin optical sensor. It continuously monitors driver behavior in real time, detecting unsafe actions like fatigue, phone usage, smoking, and distracted driving using YOLO11 Object Detection. When a risk is detected, the system sends an instant voice alert to the driver and synchronizes telemetry with the fleet manager.',
+      'DriverGuard AI runs on a camera feed in your browser. It detects phones, drinks and food in the cabin with YOLO11, and reads eye state, mouth opening and head pose with MediaPipe face landmarks. A confirmed phone detection or a sustained eye closure becomes an event recorded against the current ride, and ending the ride produces a report from those events.',
   },
   {
     question: 'Does DriverGuard AI use Object Detection or Classification?',
     answer:
-      'DriverGuard AI operates a legitimate YOLO11 Object Detection pipeline. Rather than guessing an entire image category, it detects distinct physical objects inside the cabin — such as mobile phones, seatbelts, and driver posture — returning exact normalized spatial bounding boxes and confidences.',
+      'Object detection. YOLO11 returns a bounding box and confidence for each detected object rather than one label for the whole frame. The classes it monitors are the ones the loaded model contains: the driver, cell phones, drinks and food. It does not detect seatbelts, driver posture or passengers.',
   },
   {
-    question: 'Does the system work in zero-light night driving?',
+    question: 'What does it not detect?',
     answer:
-      'Yes. DriverGuard AI is designed to operate 24/7 across all lighting conditions, including total darkness. The optical pipeline is calibrated for infrared night-vision illumination without driver disturbance.',
+      'Seatbelt compliance, driver posture, passengers, smoking, speeding and eye-gaze direction are not measured by the current pipeline. The monitoring screen labels the signals it cannot produce as NOT SUPPORTED rather than showing a placeholder reading.',
   },
   {
     question: 'Can it scale across multiple vehicles and fleet sizes?',
     answer:
-      'Absolutely. DriverGuard AI is architected for fleets of all scales — from single commercial owner-operators to enterprise fleets with thousands of vehicles. The cloud dashboard displays unified safety scores, active vehicles, and live camera telemetry.',
+      'A fleet account manages any number of driver and vehicle records. Live monitoring analyses one cabin at a time, in the browser of the person driving, and each session is recorded as a ride on that account. There is no multi-vehicle live view.',
   },
   {
     question: 'How is driver data and privacy protected?',
     answer:
-      'Privacy and security are fundamental. Telemetry is processed with end-to-end encryption. Sensitive frame logs are only stored when safety threshold violations occur, maintaining driver dignity while satisfying insurance compliance.',
+      'Frames are analysed for the ride being monitored and are not stored. What persists is the ride record: its score, grade, and the events with their timestamps and durations. No video is written to disk or kept after the session.',
   },
   {
-    question: 'How long does hardware deployment take?',
+    question: 'How is it deployed?',
     answer:
-      'Hardware deployment is straightforward and non-invasive. Standard cabin setup typically takes under 25 minutes per vehicle, with automatic pairing to the DriverGuard AI cloud platform.',
+      'There is no hardware to install on the driver\'s side. It is a web application: camera frames are captured in the browser and sent to your own backend, which runs YOLO11 and MediaPipe locally on its own CPU. No frame is sent to a third-party service, and the camera needs the user\'s permission.',
   },
 ]
 

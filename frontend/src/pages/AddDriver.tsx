@@ -45,6 +45,14 @@ interface DriverFormState {
   emergencyRelationship: string
 }
 
+/**
+ * A new driver, not an example one.
+ *
+ * This form submits to the database, so nothing identifying may start filled
+ * in. It used to arrive with an assigned vehicle, a vehicle number, years of
+ * experience and an emergency contact already chosen, which saved a record of a
+ * driver the user never described.
+ */
 const INITIAL_FORM: DriverFormState = {
   photoUrl: '',
   fullName: '',
@@ -56,12 +64,12 @@ const INITIAL_FORM: DriverFormState = {
 
   licenseNumber: '',
   licenseExpiry: '',
-  experienceYears: '3',
+  experienceYears: '',
   driverType: 'Commercial',
 
-  assignedVehicle: 'Freightliner Cascadia',
-  vehicleNumber: 'FLEET-4082',
-  department: 'Logistics Operations',
+  assignedVehicle: '',
+  vehicleNumber: '',
+  department: '',
 
   emergencyName: '',
   emergencyPhone: '',
@@ -85,7 +93,7 @@ const AddDriverPage = memo(function AddDriverPage() {
 
   useEffect(() => {
     vehicleApi.list(1, 100).then(res => {
-      if (res.success) setVehicles(res.items)
+      if (res.success) setVehicles(res.vehicles)
       setLoadingVehicles(false)
     }).catch(() => setLoadingVehicles(false))
   }, [])
@@ -203,17 +211,24 @@ const AddDriverPage = memo(function AddDriverPage() {
               </div>
               <div className="space-y-1">
                 <p className="text-xs font-bold text-on-surface">Driver Photo</p>
-                <p className="text-[11px] text-on-surface-variant">PNG or JPG up to 5MB. Recommended square aspect ratio.</p>
+                <p className="text-[11px] text-on-surface-variant">
+                  Photo upload is not available. There is no file-upload endpoint, so
+                  the backend can only store a URL that is set elsewhere.
+                </p>
+                {/*
+                  This button used to attach a stock Unsplash photo and report
+                  "Photo Uploaded", which saved a third-party image URL onto the
+                  driver record and implied a capability the product does not
+                  have. It is disabled rather than removed so the gap stays
+                  visible until there is somewhere to upload to.
+                */}
                 <button
                   type="button"
-                  onClick={() => {
-                    const mockUrl = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80'
-                    handleChange('photoUrl', mockUrl)
-                    toast.success('Photo Uploaded', 'Sample photo attached.')
-                  }}
-                  className="text-xs text-primary font-semibold hover:underline inline-block pt-1"
+                  disabled
+                  title="No upload endpoint exists yet"
+                  className="text-xs text-on-surface-variant/60 font-semibold pt-1 cursor-not-allowed"
                 >
-                  Upload Photo
+                  Upload Photo (unavailable)
                 </button>
               </div>
             </div>

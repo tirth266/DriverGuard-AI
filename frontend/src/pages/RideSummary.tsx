@@ -1,5 +1,5 @@
 import { memo, useEffect, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   CheckCircle2,
@@ -21,8 +21,9 @@ import {
 import { useAuth } from '../context/AuthContext'
 import DashboardLayout from '../layouts/DashboardLayout'
 import Button from '../components/shared/Button'
-import { fetchWithAuth, buildApiUrl } from '../services/fleetApi'
-import type { ScoreBreakdown, SessionEvent, SessionSummary } from '../components/dashboard/WebcamFeed'
+import { rideApi } from '../services/fleetApi'
+import { isSessionSummary } from '../services/sessionSummary'
+import type { ScoreBreakdown, SessionEvent, SessionSummary } from '../services/sessionSummary'
 
 const EVENT_LABELS: Record<string, string> = {
   phone_use: 'Phone use',
@@ -227,24 +228,58 @@ const RideSummaryPage = memo(function RideSummaryPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
+  const [searchParams] = useSearchParams()
 
-  const navigationSummary = location.state?.sessionSummary as SessionSummary | undefined
-  const [summary, setSummary] = useState<SessionSummary | null>(navigationSummary || null)
+  // The report belongs to a ride, so the ride it belongs to is named in the URL.
+  // End Ride appends it there, and it is what survives a reload or a pasted link —
+  // router state does not, so it can never be the only handle on the report.
+  const rideParam = searchParams.get('ride')
+  const rideId = rideParam === null ? null : Number(rideParam)
+  const hasRide = rideId !== null && Number.isInteger(rideId) && rideId > 0
+
+  const [summary, setSummary] = useState<SessionSummary | null>(null)
   const [loadFailed, setLoadFailed] = useState(false)
 
   useEffect(() => {
-    if (summary) return
+    // The summary End Ride handed over in router state. Router state is dropped by
+    // a reload and by a pasted link, so it is only ever a fallback, never the
+    // source of the report. `location` is replaced only on a navigation, so it is
+    // the precise dependency for reading the handover out of it.
+    const handover = (location.state as { sessionSummary?: unknown } | null)?.sessionSummary
+    const handedOver = isSessionSummary(handover) ? handover : null
 
-    void fetchWithAuth(buildApiUrl('/api/video/session/summary'))
-      .then(data => {
-        if (data && Array.isArray(data.events)) {
-          setSummary(data as SessionSummary)
-        } else {
-          setLoadFailed(true)
-        }
+    if (!hasRide) {
+      // No ride to read. A deep link, a bookmark and a reload all land here, and
+      // they have no report. Reading the live session instead is what produced a
+      // false clean 100/100: that session is reset by every End Ride and every
+      // new ride, so it is either empty or belongs to a different ride. No
+      // measured ride means no score is shown.
+      setSummary(handedOver)
+      setLoadFailed(handedOver === null)
+      return
+    }
+
+    let cancelled = false
+    setSummary(null)
+    setLoadFailed(false)
+
+    void rideApi.get(rideId)
+      .then(({ ride }) => {
+        if (cancelled) return
+        // The stored report is the authority: it is what the ride was finalized
+        // with, so it is the same on the first render and on every reload after.
+        const finalized = isSessionSummary(ride?.session_summary) ? ride.session_summary : null
+        setSummary(finalized ?? handedOver)
+        // A completed ride the server holds no report for is not reportable, and
+        // it is never a clean ride: nothing was ever measured against it.
+        if (!finalized && !handedOver) setLoadFailed(true)
       })
-      .catch(() => setLoadFailed(true))
-  }, [summary])
+      .catch(() => {
+        if (!cancelled) setLoadFailed(true)
+      })
+
+    return () => { cancelled = true }
+  }, [rideId, hasRide, location])
 
   const isBiz = user?.role === 'business' || user?.accountType === 'business'
   const monitoringTarget = isBiz ? '/business/monitoring' : '/personal/monitoring'
@@ -257,8 +292,9 @@ const RideSummaryPage = memo(function RideSummaryPage() {
             <AlertTriangle size={28} className="mx-auto text-danger" />
             <h1 className="text-base font-extrabold">Ride report unavailable</h1>
             <p className="text-xs text-on-surface-variant leading-relaxed">
-              The ride summary could not be read from the detection service, so no score is shown.
-              Reconnect the backend and reload the report.
+              {hasRide
+                ? 'This ride has no stored report, so no score is shown. That means nothing was ever measured against it, not that it was driven cleanly.'
+                : 'No ride was specified, so there is no report to show. End a ride to open its report, or open this page from a finished ride.'}
             </p>
             <Button variant="secondary" size="md" onClick={() => navigate(monitoringTarget)} className="inline-flex items-center gap-2">
               <ArrowLeft size={15} /> Back to Dashboard

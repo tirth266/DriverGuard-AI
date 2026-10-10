@@ -44,7 +44,7 @@ const TrustBanner = memo(function TrustBanner() {
   return (
     <section
       className="bg-surface border-y border-border py-14 transition-colors duration-300"
-      aria-label="Trusted by fleet operators"
+      aria-label="Fleet types this applies to"
     >
       <div className="px-4 md:px-16 max-w-[1440px] mx-auto">
         <motion.p
@@ -54,7 +54,10 @@ const TrustBanner = memo(function TrustBanner() {
           transition={{ duration: 0.5 }}
           className="text-center text-on-surface-variant text-label-caps font-label-caps tracking-[0.1em] uppercase mb-8 font-semibold"
         >
-          Trusted by Fleet Operators Worldwide
+          {/* These are fleet categories the product applies to, not customers.
+              The previous heading read "Trusted by Fleet Operators Worldwide",
+              which asserted a customer base that does not exist. */}
+          Applicable fleet types
         </motion.p>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4 md:gap-6">

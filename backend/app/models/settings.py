@@ -54,8 +54,21 @@ class UserSettings(Base):
         self.extra_settings = json.dumps(data)
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary."""
+        """
+        Convert to dictionary.
+
+        `extra_settings` is a free-form client-supplied blob stored verbatim and
+        echoed back here. It is spread last, so a client could send
+        {"extra_settings": {"id": 999}} and have the API report an id that is
+        not this row's. Reserved keys are therefore dropped from the blob rather
+        than trusted, and the fields below are the authoritative ones.
+        """
         extra = self.get_extra()
+        reserved = {
+            'id', 'user_id', 'drowsiness_sensitivity', 'voice_alerts_enabled',
+            'email_digest_enabled', 'created_at', 'updated_at',
+        }
+        extra = {key: value for key, value in extra.items() if key not in reserved}
         return {
             'id': self.id,
             'user_id': self.user_id,

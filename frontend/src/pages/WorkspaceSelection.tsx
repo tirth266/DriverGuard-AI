@@ -19,7 +19,7 @@ const PERSONAL_FEATURES = [
   'Driver Safety Score',
   'Fatigue Detection',
   'Phone Usage Detection',
-  'Seat Belt Monitoring',
+  'Yawning Detection',
   'Driving Reports',
   'Unlimited Personal Use',
 ]
@@ -256,7 +256,7 @@ export default function WorkspaceSelection() {
 
       {/* Footer */}
       <footer className="w-full text-center py-4 text-xs text-on-surface-variant border-t border-border/50 z-20">
-        © {new Date().getFullYear()} DriverGuard AI. Encrypted 256-bit Protection.
+        © {new Date().getFullYear()} DriverGuard AI. Passwords are hashed with bcrypt. Serve over HTTPS.
       </footer>
 
     </div>

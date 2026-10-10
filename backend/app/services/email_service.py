@@ -4,6 +4,7 @@ Email service for notifications.
 import os
 import logging
 import smtplib
+import html
 from typing import Optional, List
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -17,12 +18,25 @@ class EmailService:
 
     def __init__(self):
         self.smtp_host = os.getenv("SMTP_HOST", "")
-        self.smtp_port = int(os.getenv("SMTP_PORT", "587"))
+        # A malformed port must not take the whole application down at import
+        # time: every other SMTP setting degrades to "not configured", and this
+        # one used to raise ValueError while the module was still being imported.
+        try:
+            self.smtp_port = int(os.getenv("SMTP_PORT", "587"))
+        except (TypeError, ValueError):
+            self.smtp_port = 587
         self.smtp_user = os.getenv("SMTP_USER", "")
         self.smtp_password = os.getenv("SMTP_PASSWORD", "")
         self.from_email = os.getenv("FROM_EMAIL", "noreply@driverguard.ai")
         self.use_tls = os.getenv("SMTP_TLS", "true").lower() == "true"
-        
+        # smtplib blocks in socket calls. Without a timeout a server that accepts
+        # the connection and then goes quiet holds the calling thread forever,
+        # which is a cheap way to exhaust the worker pool.
+        try:
+            self.smtp_timeout = float(os.getenv("SMTP_TIMEOUT", "15"))
+        except (TypeError, ValueError):
+            self.smtp_timeout = 15.0
+
         self._configured = bool(self.smtp_host and self.smtp_user and self.smtp_password)
 
     def is_configured(self) -> bool:
@@ -72,7 +86,7 @@ class EmailService:
                     msg.attach(attachment)
 
             # Send email
-            with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
+            with smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=self.smtp_timeout) as server:
                 if self.use_tls:
                     server.starttls()
                 server.login(self.smtp_user, self.smtp_password)
@@ -93,6 +107,13 @@ class EmailService:
         company_name: str,
     ) -> bool:
         """Send driver invitation email."""
+        # These land inside a branded HTML template. Escaped so a crafted driver
+        # or company name cannot inject markup into mail sent from this
+        # deployment's own address. The link is additionally validated against
+        # the configured application origins by the route that accepts it.
+        safe_driver = html.escape(str(driver_name))
+        safe_company = html.escape(str(company_name))
+        safe_link = html.escape(str(invitation_link), quote=True)
         subject = f"Invitation to join {company_name} on DriverGuard AI"
         body = f"""
 Hello {driver_name},
@@ -113,10 +134,10 @@ The DriverGuard AI Team
 <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
     <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
         <h2 style="color: #1a1a2e;">DriverGuard AI</h2>
-        <p>Hello <strong>{driver_name}</strong>,</p>
-        <p>You have been invited to join <strong>{company_name}</strong> on DriverGuard AI.</p>
+        <p>Hello <strong>{safe_driver}</strong>,</p>
+        <p>You have been invited to join <strong>{safe_company}</strong> on DriverGuard AI.</p>
         <p style="text-align: center; margin: 30px 0;">
-            <a href="{invitation_link}" style="background-color: #00d4aa; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+            <a href="{safe_link}" style="background-color: #00d4aa; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
                 Accept Invitation
             </a>
         </p>

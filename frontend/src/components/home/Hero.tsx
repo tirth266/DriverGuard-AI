@@ -46,8 +46,9 @@ export default memo(function Hero() {
 
           {/* Concise, Professional Supporting Copy */}
           <p className="text-text-secondary text-base sm:text-lg leading-[1.65] max-w-xl font-normal">
-            Real-time cabin computer vision powered by YOLO11. Detect fatigue, phone distraction,
-            and seatbelt compliance in under 30 milliseconds — preventing collisions before they occur.
+            Real-time cabin computer vision powered by YOLO11 and MediaPipe. Detect phone
+            distraction, eye closure and yawning in the browser, and score the ride from the
+            events it confirms.
           </p>
 
           {/* Meaningful Actions */}
@@ -66,19 +67,21 @@ export default memo(function Hero() {
             </a>
           </div>
 
-          {/* Restrained Technical Engineering Bar */}
+          {/* Technical bar. Model and pipeline names only: latency is measured live in
+              the monitoring view rather than asserted as a fixed figure, since it
+              depends on the host the backend runs on. */}
           <div className="pt-6 border-t border-border/70 flex items-center gap-6 text-[12px] font-mono text-text-muted flex-wrap">
             <div className="flex items-center gap-2">
-              <Activity size={13} className="text-safe" />
-              <span>INFERENCE: &lt;25MS</span>
+              <Cpu size={13} className="text-brand" />
+              <span>DETECTION: YOLO11</span>
             </div>
             <div className="flex items-center gap-2">
-              <Cpu size={13} className="text-brand" />
-              <span>MODEL: YOLO11-EDGE</span>
+              <Activity size={13} className="text-safe" />
+              <span>LANDMARKS: MEDIAPIPE</span>
             </div>
             <div className="flex items-center gap-2">
               <ShieldCheck size={13} className="text-safe" />
-              <span>SPATIAL HUD ACTIVE</span>
+              <span>INFERENCE ON YOUR SERVER · CPU</span>
             </div>
           </div>
 
@@ -125,15 +128,12 @@ export default memo(function Hero() {
                   <span className="absolute -bottom-1 -left-1 w-2.5 h-2.5 border-b-2 border-l-2 border-safe" />
                   <span className="absolute -bottom-1 -right-1 w-2.5 h-2.5 border-b-2 border-r-2 border-safe" />
 
-                  {/* Clean Technical Tag */}
+                  {/* Illustrative overlay on the looping demo clip. The confidences and statuses
+                      are sample values from that clip, not a live reading — the
+                      caption below says so. */}
                   <div className="absolute -top-5 left-0 bg-[#070707]/90 px-1.5 py-0.5 border border-safe/50 rounded-[4px] text-[10px] font-mono font-bold text-safe flex items-center gap-1">
                     <span className="w-1 h-1 rounded-full bg-safe" />
                     <span>DRIVER: 99%</span>
-                  </div>
-
-                  {/* Secondary Gaze Indicator */}
-                  <div className="absolute bottom-1 right-1 bg-[#070707]/80 px-1 py-0.5 rounded-[4px] text-[9px] font-mono text-white/80">
-                    GAZE: FORWARD
                   </div>
                 </div>
               </div>
@@ -141,21 +141,21 @@ export default memo(function Hero() {
               {/* Overlay 1: Top HUD Telemetry */}
               <div className="absolute top-3 right-3 bg-[#070707]/85 border border-white/10 px-2.5 py-1 rounded-[6px] text-[10px] font-mono text-text-secondary flex items-center gap-2 z-20">
                 <span className="w-1.5 h-1.5 rounded-full bg-safe" />
-                <span>YOLO11 · 30 FPS</span>
+                <span>ILLUSTRATIVE OVERLAY</span>
               </div>
 
               {/* Overlay 2: Bottom Status Indicator */}
               <div className="absolute bottom-3 left-3 bg-[#070707]/85 border border-white/10 px-2.5 py-1 rounded-[6px] text-[11px] font-mono text-text-primary flex items-center gap-1.5 z-20">
                 <ShieldCheck size={13} className="text-safe" />
-                <span>STATUS: VERIFIED SAFE</span>
+                <span>DEMO CLIP · NOT A LIVE FEED</span>
               </div>
 
             </div>
 
             {/* Bottom Meta Stripe */}
             <div className="px-4 py-2.5 bg-surface border-t border-border flex items-center justify-between text-[11px] font-mono text-text-muted">
-              <span>STREAM: 1080P CABIN-WIDE</span>
-              <span className="text-safe font-semibold">ALL SENSORS NORMAL</span>
+              <span>SAMPLE VIDEO</span>
+              <span>Live readings appear in Live Monitoring</span>
             </div>
 
           </div>

@@ -16,7 +16,7 @@ const BENEFITS = [
   {
     icon: ShieldCheck,
     title: 'Reduce Road Accidents',
-    description: 'Prevent collisions before they happen with proactive real-time driver monitoring.',
+    description: 'Flags distraction the moment it happens, while the vehicle is still moving.',
     accent: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
   },
   {
@@ -28,7 +28,7 @@ const BENEFITS = [
   {
     icon: BadgeDollarSign,
     title: 'Lower Insurance Costs',
-    description: 'Demonstrate fleet safety improvements to negotiate better insurance premiums.',
+    description: 'Keep a record of every scored ride, with a PDF report for each one.',
     accent: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
   },
   {
@@ -40,13 +40,13 @@ const BENEFITS = [
   {
     icon: ClipboardCheck,
     title: 'Ensure Compliance',
-    description: 'Meet regulatory safety requirements with automated monitoring and documentation.',
+    description: 'Document each ride automatically: score, grade, events and timings.',
     accent: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20',
   },
   {
     icon: Activity,
     title: 'Real-Time Monitoring',
-    description: 'See the safety status of every vehicle in your fleet at any moment, from anywhere.',
+    description: 'Review the safety history of every driver in your fleet, ride by ride.',
     accent: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20',
   },
 ]

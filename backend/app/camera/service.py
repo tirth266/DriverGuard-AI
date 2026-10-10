@@ -14,7 +14,7 @@ from fastapi import WebSocket, WebSocketDisconnect, Query
 from jose import jwt, JWTError
 
 from app.extensions import JWT_SECRET_KEY, JWT_ALGORITHM
-from app.opencv.processor import opencv_processor
+from app.opencv.processor import process_base64_frame_async
 
 logger = logging.getLogger(__name__)
 
@@ -204,7 +204,7 @@ async def handle_video_stream(websocket: WebSocket, token: Optional[str] = Query
                     session.set_ride(frame_ride_id)
 
                 # Process frame through unified pipeline with user/ride context
-                result = opencv_processor.process_base64_frame(
+                result = await process_base64_frame_async(
                     image_base64,
                     user_id=str(user_id),
                     ride_id=session.ride_id,

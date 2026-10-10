@@ -62,7 +62,7 @@ export default memo(function Footer() {
           <div className="flex items-center gap-2 pt-1 text-text-muted">
             <span className="w-1.5 h-1.5 rounded-full bg-safe animate-pulse" />
             <span className="font-mono text-[11px] text-text-secondary">
-              All Systems Operational · Edge Inference Active
+              Inference runs on the backend · No cloud AI service
             </span>
           </div>
         </div>
@@ -95,9 +95,9 @@ export default memo(function Footer() {
           © {new Date().getFullYear()} DriverGuard AI Technologies Inc. All rights reserved.
         </div>
         <div className="flex items-center gap-4">
-          <span>MODEL: YOLO11-EDGE</span>
-          <span>LATENCY: &lt;30MS</span>
-          <span>VERSION: 2.4.0</span>
+          <span>MODEL: YOLO11</span>
+          <span>INFERENCE: LOCAL</span>
+          <span>MODEL: YOLO11 · MEDIAPIPE</span>
         </div>
       </div>
     </footer>
